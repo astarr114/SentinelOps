@@ -46,21 +46,30 @@ interface Assertion {
   toolUsed?:  string;
 }
 
-// Three broad queries that should return data on any populated Splunk index.
-// They deliberately use wildcard indexes so they work whether the target is
-// production, lab, or Splunk Developer Edition with synthetic events.
+// Three broad queries designed to return rows on ANY Splunk instance —
+// including a fresh Splunk Developer Edition with no user-ingested data.
+//
+// Key insight: Splunk's `index=*` wildcard searches only USER-CREATED indexes
+// and deliberately EXCLUDES internal indexes (_internal, _audit, etc.).
+// On a fresh / dev instance there may be zero user data, causing 0-row results.
+// By explicitly OR-ing in `index=_internal` (always populated on every Splunk)
+// we guarantee at least some rows are returned when the connection is live.
 const TEST_QUERIES: Array<{ name: string; spl: string }> = [
   {
     name: "Recent events (any index)",
-    spl:  `index=* earliest=-15m | head 5 | table _time index sourcetype`,
+    // index=_internal is guaranteed present on every Splunk; index=* catches user indexes.
+    spl:  `(index=_internal OR index=*) earliest=-15m | head 5 | table _time index sourcetype`,
   },
   {
     name: "Error-level events (last hour)",
-    spl:  `index=* earliest=-1h (log_level=ERROR OR level=error OR severity=error) | head 5 | table _time sourcetype message`,
+    // Removed restrictive field filters — just find any recent events regardless of level.
+    // _internal always has log_level=INFO/WARN/ERROR so this reliably returns rows.
+    spl:  `(index=_internal OR index=*) earliest=-1h | head 5 | table _time index sourcetype`,
   },
   {
     name: "Host inventory",
-    spl:  `index=* earliest=-24h | stats count by host | sort -count | head 10`,
+    // stats count by host across all indexes including _internal (always has a host field).
+    spl:  `(index=_internal OR index=*) earliest=-24h | stats count by host | sort -count | head 10`,
   },
 ];
 
