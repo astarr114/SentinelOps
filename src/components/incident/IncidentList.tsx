@@ -132,10 +132,13 @@ export function IncidentListItem({ incident, selected, onClick, onResolve, dupli
 
   return (
     <TooltipProvider delayDuration={300}>
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}
         className={cn(
-          'relative w-full text-left p-3.5 rounded-xl border transition-all duration-150 group outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'relative w-full text-left p-3.5 rounded-xl border transition-all duration-150 group outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
           selected
             ? 'bg-primary/8 border-primary/35 shadow-md shadow-primary/5 glow-primary'
             : 'bg-card/80 border-border hover:border-border/90 hover:bg-card hover:shadow-sm',
@@ -253,7 +256,7 @@ export function IncidentListItem({ incident, selected, onClick, onResolve, dupli
             }
           </button>
         )}
-      </button>
+      </div>
     </TooltipProvider>
   );
 }
