@@ -591,6 +591,8 @@ serve(async (req: Request): Promise<Response> => {
   const mcpAuthMethod    = ((body.mcpAuthMethod as string | undefined) ?? "bearer") as McpAuthMethod;
   const mcpUsername      = (body.mcpUsername as string | undefined)?.trim() ?? "";
   const mcpPassword      = (body.mcpPassword as string | undefined)?.trim() ?? "";
+  // Splunk Hosted Model (OpenAI-compat endpoint on Splunk Cloud Platform)
+  const splunkHostedModelName = (body.splunkHostedModelName as string | undefined)?.trim() ?? "";
 
   const hasMcp  = !!mcpUrl;
   const hasRest = !!(splunkHost && splunkToken);
@@ -613,7 +615,9 @@ serve(async (req: Request): Promise<Response> => {
   // splunk-hosted-model uses an OpenAI-compat endpoint; gemini uses the gateway.
   function resolveReasoningParams(): { provider: LlmProvider; key: string; model: string; gatewayKey: string; isSplunkHosted: boolean } {
     if (reasoningProvider === "splunk-hosted-model" && splunkHostedModelEndpoint && splunkHostedModelToken) {
-      return { provider: "openai" as LlmProvider, key: splunkHostedModelToken, model: llmModel || "default", gatewayKey: "", isSplunkHosted: true };
+      // Use splunkHostedModelName if provided, else fall back to llmModel, else "default"
+      const modelId = splunkHostedModelName || llmModel || "default";
+      return { provider: "openai" as LlmProvider, key: splunkHostedModelToken, model: modelId, gatewayKey: "", isSplunkHosted: true };
     }
     const effectiveProvider: LlmProvider = llmApiKey ? llmProvider : "gemini";
     return { provider: effectiveProvider, key: llmApiKey || "", model: llmModel || "", gatewayKey: apiKey, isSplunkHosted: false };
@@ -750,6 +754,23 @@ serve(async (req: Request): Promise<Response> => {
     const { evidence, mode: splunkMode, trace } = gathered;
     const hasLiveData = splunkMode !== "demo";
 
+    // ── Transparency metadata injected into every response ───────────────────
+    const evidenceSource   = splunkMode as "live-mcp" | "live-rest" | "demo";
+    const reasoningSource  = effectiveReasoningLabel as string;
+    const usedLiveSplunk        = splunkMode !== "demo";
+    const usedSplunkHostedModel = reasoning.isSplunkHosted;
+
+    // Enrich the runtime trace with the new hybrid fields
+    const enrichedTrace = {
+      ...trace,
+      evidenceSource,
+      reasoningSource,
+      usedLiveSplunk,
+      usedSplunkHostedModel,
+      hostedModelEndpoint: reasoning.isSplunkHosted ? splunkHostedModelEndpoint : undefined,
+      hostedModelName:     reasoning.isSplunkHosted ? (reasoning.model || undefined) : undefined,
+    };
+
     // ── Non-streaming ────────────────────────────────────────────────────────
     if (!wantStream) {
       const prompt = buildPromptFromEvidence(evidence, hasLiveData);
@@ -757,15 +778,19 @@ serve(async (req: Request): Promise<Response> => {
       const { _incidentMeta: _d, ...evidenceWire } = evidence as typeof evidence & { _incidentMeta?: unknown };
       return new Response(JSON.stringify({
         ...evidenceWire,
-        hypotheses:         aiAnalysis.hypotheses,
-        recommendedActions: aiAnalysis.recommendedActions,
-        openQuestions:      aiAnalysis.openQuestions,
-        blastRadius:        aiAnalysis.blastRadius,
-        aiBrief:            aiAnalysis.aiBrief,
+        hypotheses:          aiAnalysis.hypotheses,
+        recommendedActions:  aiAnalysis.recommendedActions,
+        openQuestions:       aiAnalysis.openQuestions,
+        blastRadius:         aiAnalysis.blastRadius,
+        aiBrief:             aiAnalysis.aiBrief,
         splunkMode,
-        runtimeTrace:       trace,
-        suggestedQueries:   buildSuggestedQueries(service, timeWindow, evidence.topErrors, evidence.deployEvents, aiAnalysis.blastRadius?.endpoints ?? []),
-        _prompt:            prompt.slice(0, 200), // for debugging
+        evidenceSource,
+        reasoningSource,
+        usedLiveSplunk,
+        usedSplunkHostedModel,
+        runtimeTrace:        enrichedTrace,
+        suggestedQueries:    buildSuggestedQueries(service, timeWindow, evidence.topErrors, evidence.deployEvents, aiAnalysis.blastRadius?.endpoints ?? []),
+        _prompt:             prompt.slice(0, 200),
       }), { status: 200, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
@@ -776,8 +801,12 @@ serve(async (req: Request): Promise<Response> => {
     const streamSSE = async () => {
       try {
         const { _incidentMeta: _d2, ...evidenceWire } = evidence as typeof evidence & { _incidentMeta?: unknown };
-        // Phase 1: metadata with runtimeTrace so UI knows immediately which path was used
-        await sseEvent(writer, "metadata", { ...evidenceWire, splunkMode, runtimeTrace: trace, aiBrief: null });
+        // Phase 1: metadata with enrichedTrace so UI knows immediately which paths were used
+        await sseEvent(writer, "metadata", {
+          ...evidenceWire, splunkMode,
+          evidenceSource, reasoningSource, usedLiveSplunk, usedSplunkHostedModel,
+          runtimeTrace: enrichedTrace, aiBrief: null,
+        });
 
         // Phase 2: stream LLM tokens
         const prompt = buildPromptFromEvidence(evidence, hasLiveData);
@@ -880,7 +909,9 @@ serve(async (req: Request): Promise<Response> => {
         await sseEvent(writer, "done", {
           ...evidenceWire,
           hypotheses: aiHypotheses, recommendedActions: aiActions, openQuestions: aiQuestions, blastRadius: aiBlast,
-          aiBrief: parsedBrief, splunkMode, runtimeTrace: trace,
+          aiBrief: parsedBrief, splunkMode,
+          evidenceSource, reasoningSource, usedLiveSplunk, usedSplunkHostedModel,
+          runtimeTrace: enrichedTrace,
           suggestedQueries: buildSuggestedQueries(service, timeWindow, evidence.topErrors, evidence.deployEvents, aiBlast.endpoints ?? []),
         });
 

@@ -160,11 +160,12 @@ export default function SettingsPage() {
   const { profile } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const {
-    config, isLive, isMcp,
+    config, isLive, isMcp, isHostedModelActive,
     isSaving, isTesting, testResult, testError,
     isMcpTesting, mcpTestResult, mcpTestError,
     isVerifyingLive, verifyLiveResult, verifyLiveError,
-    updateConfig, saveConfig, testConnection, testMcpConnection, verifyLiveConnection,
+    isHostedModelTesting, hostedModelTestResult, hostedModelTestError,
+    updateConfig, saveConfig, testConnection, testMcpConnection, verifyLiveConnection, testHostedModelConnection,
   } = useSplunk();
 
   const {
@@ -851,34 +852,75 @@ export default function SettingsPage() {
           {/* ── LEFT COLUMN ──────────────────────────────────────────────── */}
           <div className="space-y-8">
 
-          {/* ── Splunk REST API ────────────────────────────────────────────── */}
+          {/* ── Splunk REST API — Section A: Evidence Layer ────────────── */}
           <div className="rounded-xl border border-border bg-card p-6 space-y-6">
             <div className="flex items-start gap-3 pb-4 border-b border-border">
               <Wifi className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">Splunk REST API Connection</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">Connect to your Splunk Enterprise or Cloud instance.</p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 border border-border/50 rounded px-1.5 py-0.5 bg-secondary/40">
+                    Section A
+                  </span>
+                  <h2 className="text-sm font-semibold text-foreground">Evidence Layer — Splunk REST API</h2>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Connect to your local Splunk Enterprise instance for live evidence retrieval.
+                  Recommended URL: <code className="font-mono bg-muted/50 px-1 rounded text-[11px]">https://localhost:8089</code>
+                </p>
               </div>
             </div>
             <div className="space-y-5">
               <div className="space-y-1.5">
-                <label className="text-sm font-normal text-foreground">Splunk Host URL</label>
+                <label className="text-sm font-normal text-foreground">Splunk REST Base URL</label>
                 <Input value={config.splunkHost} onChange={e => updateConfig({ splunkHost: e.target.value })}
-                  placeholder="https://your-splunk.example.com:8089"
+                  placeholder="https://localhost:8089"
                   className="font-mono text-sm h-10 bg-secondary/30 border-border" />
-                <p className="text-[11px] text-muted-foreground">Include port (default 8089). Must be HTTPS.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Include port (default 8089). For local Splunk Enterprise use <code className="font-mono bg-muted/50 px-1 rounded">https://localhost:8089</code>.
+                  For ngrok use <code className="font-mono bg-muted/50 px-1 rounded">https://&lt;subdomain&gt;.ngrok-free.app</code>.
+                </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-normal text-foreground">Authentication Token</label>
+                <label className="text-sm font-normal text-foreground">REST Authentication Token</label>
                 <div className="relative">
                   <Input type={showToken ? 'text' : 'password'} value={config.splunkToken}
                     onChange={e => updateConfig({ splunkToken: e.target.value })}
-                    placeholder="Splunk Bearer token"
+                    placeholder="Splunk Bearer token (REST scope)"
                     className="font-mono text-sm h-10 bg-secondary/30 border-border pr-10" />
                   <button type="button" onClick={() => setShowToken(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
+                </div>
+              </div>
+
+              {/* SSL verify toggle */}
+              <div className="flex items-start gap-3 rounded-lg border border-border bg-secondary/20 px-3 py-2.5">
+                <button
+                  type="button"
+                  onClick={() => updateConfig({ sslVerify: !config.sslVerify })}
+                  className={cn(
+                    'mt-0.5 h-4 w-7 shrink-0 rounded-full border transition-all flex items-center',
+                    config.sslVerify
+                      ? 'bg-primary border-primary justify-end pr-0.5'
+                      : 'bg-secondary/60 border-border justify-start pl-0.5',
+                  )}
+                  title={config.sslVerify ? 'SSL verification enabled' : 'SSL verification disabled (self-signed cert)'}
+                >
+                  <span className="h-3 w-3 rounded-full bg-white shadow-sm" />
+                </button>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-foreground">Verify SSL certificate</p>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    {config.sslVerify
+                      ? 'SSL verification ON — requires a valid certificate on your Splunk instance.'
+                      : 'SSL verification OFF — allows self-signed certs. '}
+                    {!config.sslVerify && (
+                      <span className="text-amber-400">
+                        Note: Supabase Edge Functions cannot bypass SSL natively — use ngrok for local Splunk.
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
               {testResult === 'ok' && (
@@ -1188,15 +1230,21 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* ── Splunk MCP Server ─────────────────────────────────────────── */}
+          {/* ── Splunk MCP Server — Section A: Evidence Layer ─────────────── */}
           <div className="rounded-xl border border-border bg-card p-6 space-y-6">
             <div className="flex items-start gap-3 pb-4 border-b border-border">
               <Cpu className="h-5 w-5 text-purple-400 mt-0.5 shrink-0" />
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-foreground">Splunk MCP Server</h2>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 border border-border/50 rounded px-1.5 py-0.5 bg-secondary/40">
+                    Section A
+                  </span>
+                  <h2 className="text-sm font-semibold text-foreground">Evidence Layer — Splunk MCP Server 1.2</h2>
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Connects to a remote Splunk MCP Server via JSON-RPC 2.0 over HTTPS.
-                  Enables NL→SPL execution, tool discovery, and direct tool invocation.
+                  Connect via JSON-RPC 2.0 over HTTPS to <code className="font-mono bg-muted/50 px-1 rounded text-[11px]">/services/mcp</code>.
+                  Enables NL→SPL, tool discovery, and direct tool invocation for live evidence retrieval.
+                  MCP token may differ from the REST token above.
                 </p>
               </div>
             </div>
@@ -1640,13 +1688,19 @@ export default function SettingsPage() {
               {/* ── Reasoning Provider Selector ────────────────────────── */}
               <div id="reasoning-provider-section" className="rounded-lg border border-border bg-secondary/10 px-3 py-3 space-y-2.5">
                 <div>
-                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 mb-0.5">
-                    <BrainCircuit className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-                    Reasoning Provider
-                  </p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 border border-border/50 rounded px-1.5 py-0.5 bg-background/40">
+                      Section B
+                    </span>
+                    <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <BrainCircuit className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                      Reasoning Provider
+                    </p>
+                  </div>
                   <p className="text-[10px] text-muted-foreground leading-relaxed">
-                    Splunk provides <strong className="text-foreground">live operational evidence</strong> via MCP or REST.
-                    The reasoning layer (LLM) is separate. Choose which provider generates the incident analysis brief.
+                    Splunk provides <strong className="text-foreground">live operational evidence</strong> via MCP or REST (Section A).
+                    The reasoning layer (LLM) is separate — it synthesises the incident analysis brief.
+                    Choose which provider performs reasoning. Both layers are independently attributed in every result.
                   </p>
                 </div>
 
@@ -1666,7 +1720,8 @@ export default function SettingsPage() {
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground">Gemini 2.5 Flash</p>
                       <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
-                        Google Gemini via Medo gateway. Splunk provides data; Gemini provides reasoning.
+                        Google Gemini via Medo gateway. Splunk provides evidence; Gemini provides reasoning.
+                        Safe to claim at hackathon — clearly attributed.
                       </p>
                       {(config.reasoningProvider === 'gemini' || !config.reasoningProvider) && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-blue-300 mt-1 font-mono">
@@ -1691,11 +1746,17 @@ export default function SettingsPage() {
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground">Splunk Hosted Model</p>
                       <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
-                        Route reasoning through a Splunk-hosted LLM endpoint. Requires endpoint URL and token below.
+                        Route reasoning through a real Splunk-hosted LLM endpoint (Splunk Cloud Platform only — not available on local Enterprise).
+                        Requires endpoint URL, token, and model name.
                       </p>
                       {config.reasoningProvider === 'splunk-hosted-model' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-purple-300 mt-1 font-mono">
-                          <CheckCircle2 className="h-2.5 w-2.5" /> Active
+                        <span className={cn(
+                          'inline-flex items-center gap-1 text-[10px] mt-1 font-mono',
+                          isHostedModelActive ? 'text-purple-300' : 'text-amber-300',
+                        )}>
+                          {isHostedModelActive
+                            ? <><CheckCircle2 className="h-2.5 w-2.5" /> Active &amp; configured</>
+                            : <><AlertTriangle className="h-2.5 w-2.5" /> Selected — awaiting credentials</>}
                         </span>
                       )}
                     </div>
@@ -1705,16 +1766,26 @@ export default function SettingsPage() {
                 {/* Splunk Hosted Model credential fields — only shown when selected */}
                 {config.reasoningProvider === 'splunk-hosted-model' && (
                   <div className="space-y-2.5 border-t border-border/60 pt-2.5">
+                    {/* Important limitation notice */}
+                    <div className="flex items-start gap-2 rounded-lg border border-blue-700/40 bg-blue-950/20 px-3 py-2">
+                      <AlertTriangle className="h-3.5 w-3.5 text-blue-400 mt-0.5 shrink-0" />
+                      <p className="text-[11px] text-blue-300 leading-relaxed">
+                        <strong className="text-foreground">Important:</strong> Splunk Foundation Models (AI Assistant) are available on <strong className="text-foreground">Splunk Cloud Platform</strong> only.
+                        Local Splunk Enterprise does not provide hosted LLM inference endpoints.
+                        Only configure this section if you have a real Splunk Cloud Platform instance with AI capabilities enabled.
+                      </p>
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="text-sm font-normal text-foreground">Hosted Model Endpoint URL</label>
                       <Input
                         value={config.splunkHostedModelEndpoint}
                         onChange={e => updateConfig({ splunkHostedModelEndpoint: e.target.value })}
-                        placeholder="https://your-splunk-host/services/llm/v1/chat"
+                        placeholder="https://your-splunk-cloud.splunkcloud.com/services/llm/v1/chat"
                         className="font-mono text-sm h-10 bg-secondary/30 border-border"
                       />
                       <p className="text-[10px] text-muted-foreground">
-                        The HTTP endpoint for the Splunk-hosted LLM (OpenAI-compatible chat completions format).
+                        OpenAI-compatible chat completions endpoint on your Splunk Cloud Platform instance.
                       </p>
                     </div>
                     <div className="space-y-1.5">
@@ -1727,12 +1798,50 @@ export default function SettingsPage() {
                         className="font-mono text-sm h-10 bg-secondary/30 border-border"
                       />
                     </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-normal text-foreground">Model Name / Deployment ID</label>
+                      <Input
+                        value={config.splunkHostedModelName ?? ''}
+                        onChange={e => updateConfig({ splunkHostedModelName: e.target.value })}
+                        placeholder="e.g. hosted-llm-prod or default"
+                        className="font-mono text-sm h-10 bg-secondary/30 border-border"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        The model identifier or deployment name returned by your Splunk Cloud AI endpoint.
+                      </p>
+                    </div>
+
+                    {/* Test hosted model button */}
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={testHostedModelConnection}
+                        disabled={isHostedModelTesting || !config.splunkHostedModelEndpoint || !config.splunkHostedModelToken}
+                        className="h-9 gap-2 self-start"
+                      >
+                        {isHostedModelTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                        {isHostedModelTesting ? 'Testing inference…' : 'Test Hosted Model Inference'}
+                      </Button>
+                      {hostedModelTestResult === 'ok' && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                          <CheckCircle2 className="h-3 w-3" /> Hosted model responded — inference is live
+                        </div>
+                      )}
+                      {hostedModelTestResult === 'fail' && (
+                        <div className="rounded border border-red-700/40 bg-red-950/20 px-2.5 py-2">
+                          <p className="text-[11px] text-red-300">{hostedModelTestError || 'Test failed — check endpoint, token, and model name.'}</p>
+                        </div>
+                      )}
+                    </div>
+
                     {(!config.splunkHostedModelEndpoint || !config.splunkHostedModelToken) && (
                       <div className="flex items-start gap-2 rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2">
                         <AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
                         <p className="text-[11px] text-amber-300">
                           Endpoint URL and token are required to activate Splunk-hosted reasoning.
-                          Until configured, Gemini is used as fallback.
+                          Until configured, Gemini will be used as the fallback reasoning provider and clearly labelled as such.
                         </p>
                       </div>
                     )}
@@ -1740,11 +1849,16 @@ export default function SettingsPage() {
                 )}
 
                 {/* Honest attribution footer */}
-                <div className="rounded border border-border/60 bg-background/40 px-2.5 py-2 text-[10px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">Data layer:</strong> Splunk (MCP or REST) provides live operational evidence — error logs, deploy events, service metadata.<br />
-                  <strong className="text-foreground">Reasoning layer:</strong> {config.reasoningProvider === 'splunk-hosted-model' && config.splunkHostedModelEndpoint
-                    ? 'Splunk Hosted Model — routing analysis through your configured Splunk LLM endpoint.'
-                    : 'Gemini 2.5 Flash — Splunk provides data; Gemini synthesises the analysis brief.'}
+                <div className="rounded border border-border/60 bg-background/40 px-2.5 py-2 text-[10px] text-muted-foreground leading-relaxed space-y-0.5">
+                  <p><strong className="text-foreground">Evidence layer (Section A):</strong> Splunk MCP or REST — live operational data from your Splunk instance.</p>
+                  <p><strong className="text-foreground">Reasoning layer (Section B):</strong>{' '}
+                    {config.reasoningProvider === 'splunk-hosted-model' && isHostedModelActive
+                      ? 'Splunk Hosted Model — routing analysis through your configured Splunk Cloud AI endpoint. Both layers active.'
+                      : config.reasoningProvider === 'splunk-hosted-model' && !isHostedModelActive
+                        ? 'Splunk Hosted Model selected but not yet configured — Gemini will be used until credentials are provided.'
+                        : 'Gemini 2.5 Flash — Splunk provides evidence; Gemini synthesises the analysis brief.'}
+                  </p>
+                  <p className="text-[9px] text-muted-foreground/60 mt-1">Every analysis result includes explicit evidence_source and reasoning_source fields for judge verification.</p>
                 </div>
               </div>
 

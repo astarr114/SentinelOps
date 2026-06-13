@@ -31,6 +31,7 @@ export const DEFAULT_SEVERITY_RULES: SeverityRules = {
 };
 
 interface SplunkConfig {
+  // ── Evidence Layer (Local Splunk Enterprise) ────────────────────────────────
   splunkHost: string;
   splunkToken: string;
   splunkMcpUrl: string;
@@ -42,12 +43,21 @@ interface SplunkConfig {
   mcpServerName: string;
   mcpServerVersion: string;
   mcpToolList: McpTool[];
+  /** Skip SSL verification for local Splunk with self-signed certs.
+   *  NOTE: Supabase Edge Functions cannot bypass SSL; use ngrok for local dev. */
+  sslVerify: boolean;
   mode: SplunkMode;
   lastConnectedAt: string | null;
   lastLiveVerifiedAt: string | null;
+  // ── Reasoning Layer ─────────────────────────────────────────────────────────
   reasoningProvider: ReasoningProvider;
+  /** Splunk Hosted Model endpoint (OpenAI-compat, Splunk Cloud Platform only) */
   splunkHostedModelEndpoint: string;
+  /** Auth token for the Splunk Hosted Model */
   splunkHostedModelToken: string;
+  /** Model name / deployment ID for the Splunk Hosted Model */
+  splunkHostedModelName: string;
+  // ── Integrations ────────────────────────────────────────────────────────────
   pagerdutyRoutingKey: string;
   alertEmail: string;
   resendApiKey: string;
@@ -64,6 +74,8 @@ interface SplunkContextValue {
   isLive: boolean;
   isMcp: boolean;
   isRest: boolean;
+  /** True when a valid Splunk Hosted Model endpoint + token are configured AND the provider is set to splunk-hosted-model */
+  isHostedModelActive: boolean;
   isSaving: boolean;
   isTesting: boolean;
   testResult: 'idle' | 'ok' | 'fail';
@@ -74,11 +86,15 @@ interface SplunkContextValue {
   isVerifyingLive: boolean;
   verifyLiveResult: 'idle' | 'ok' | 'fail';
   verifyLiveError: string;
+  isHostedModelTesting: boolean;
+  hostedModelTestResult: 'idle' | 'ok' | 'fail';
+  hostedModelTestError: string;
   updateConfig: (partial: Partial<SplunkConfig>) => void;
   saveConfig: () => Promise<void>;
   testConnection: () => Promise<void>;
   testMcpConnection: () => Promise<void>;
   verifyLiveConnection: () => Promise<void>;
+  testHostedModelConnection: () => Promise<void>;
 }
 
 const DEFAULT_CONFIG: SplunkConfig = {
@@ -93,12 +109,14 @@ const DEFAULT_CONFIG: SplunkConfig = {
   mcpServerName: '',
   mcpServerVersion: '',
   mcpToolList: [],
+  sslVerify: false,
   mode: 'demo',
   lastConnectedAt: null,
   lastLiveVerifiedAt: null,
   reasoningProvider: 'gemini',
   splunkHostedModelEndpoint: '',
   splunkHostedModelToken: '',
+  splunkHostedModelName: '',
   pagerdutyRoutingKey: '',
   alertEmail: '',
   resendApiKey: '',
@@ -218,6 +236,9 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
   const [isVerifyingLive, setIsVerifyingLive] = useState(false);
   const [verifyLiveResult, setVerifyLiveResult] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [verifyLiveError, setVerifyLiveError] = useState('');
+  const [isHostedModelTesting, setIsHostedModelTesting] = useState(false);
+  const [hostedModelTestResult, setHostedModelTestResult] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [hostedModelTestError, setHostedModelTestError] = useState('');
   // True while the initial DB fetch is in-flight; suppresses premature DEMO badge.
   const [isConfigLoading, setIsConfigLoading] = useState(true);
 
@@ -227,7 +248,7 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
     setIsConfigLoading(true);
     supabase
       .from('splunk_configs')
-      .select('splunk_host,splunk_token,splunk_mcp_url,splunk_mcp_token,mcp_auth_method,splunk_mcp_username,splunk_mcp_password,mcp_skip_ngrok,mcp_server_name,mcp_server_version,mcp_tool_list,mode,last_connected_at,last_live_verified_at,reasoning_provider,splunk_hosted_model_endpoint,splunk_hosted_model_token,pagerduty_routing_key,alert_email,resend_api_key,pd_rest_api_key,slack_webhook_url,pd_auto_sync,pd_sync_interval,severity_rules')
+      .select('splunk_host,splunk_token,splunk_mcp_url,splunk_mcp_token,mcp_auth_method,splunk_mcp_username,splunk_mcp_password,mcp_skip_ngrok,mcp_server_name,mcp_server_version,mcp_tool_list,ssl_verify,mode,last_connected_at,last_live_verified_at,reasoning_provider,splunk_hosted_model_endpoint,splunk_hosted_model_token,splunk_hosted_model_name,pagerduty_routing_key,alert_email,resend_api_key,pd_rest_api_key,slack_webhook_url,pd_auto_sync,pd_sync_interval,severity_rules')
       .eq('user_id', user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -244,12 +265,14 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
             mcpServerName: data.mcp_server_name ?? '',
             mcpServerVersion: data.mcp_server_version ?? '',
             mcpToolList: Array.isArray(data.mcp_tool_list) ? (data.mcp_tool_list as McpTool[]) : [],
+            sslVerify: data.ssl_verify ?? false,
             mode: (data.mode as SplunkMode) ?? 'demo',
             lastConnectedAt: data.last_connected_at ?? null,
             lastLiveVerifiedAt: data.last_live_verified_at ?? null,
             reasoningProvider: (data.reasoning_provider as ReasoningProvider) ?? 'gemini',
             splunkHostedModelEndpoint: data.splunk_hosted_model_endpoint ?? '',
             splunkHostedModelToken: data.splunk_hosted_model_token ?? '',
+            splunkHostedModelName: data.splunk_hosted_model_name ?? '',
             pagerdutyRoutingKey: data.pagerduty_routing_key ?? '',
             alertEmail: data.alert_email ?? '',
             resendApiKey: data.resend_api_key ?? '',
@@ -367,6 +390,50 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
     }
   }, [config.splunkMcpUrl, config.splunkMcpToken, config.mcpAuthMethod, config.splunkMcpUsername, config.splunkMcpPassword]);
 
+  /** Test inference against the configured Splunk Hosted Model endpoint.
+   *  Uses a minimal OpenAI-compat /chat/completions request. */
+  const testHostedModelConnection = useCallback(async () => {
+    if (!config.splunkHostedModelEndpoint || !config.splunkHostedModelToken) {
+      setHostedModelTestResult('fail');
+      setHostedModelTestError('Hosted model endpoint and token are required.');
+      return;
+    }
+    setIsHostedModelTesting(true);
+    setHostedModelTestResult('idle');
+    setHostedModelTestError('');
+    try {
+      const { data, error } = await supabase.functions.invoke('splunk-test', {
+        body: {
+          mode: 'hosted-model',
+          hostedModelEndpoint: config.splunkHostedModelEndpoint,
+          hostedModelToken: config.splunkHostedModelToken,
+          hostedModelName: config.splunkHostedModelName || 'default',
+        },
+      });
+      if (error) {
+        let msg = error.message;
+        try {
+          const raw = await error?.context?.text?.();
+          if (raw) { const parsed = JSON.parse(raw); msg = parsed?.message ?? parsed?.error ?? raw; }
+        } catch { /* use error.message */ }
+        setHostedModelTestResult('fail');
+        setHostedModelTestError(msg || 'Hosted model test failed.');
+        return;
+      }
+      if (data?.ok) {
+        setHostedModelTestResult('ok');
+      } else {
+        setHostedModelTestResult('fail');
+        setHostedModelTestError(data?.message || 'Hosted model inference test failed. Check endpoint and token.');
+      }
+    } catch (e) {
+      setHostedModelTestResult('fail');
+      setHostedModelTestError(e instanceof Error ? e.message : 'Hosted model test failed.');
+    } finally {
+      setIsHostedModelTesting(false);
+    }
+  }, [config.splunkHostedModelEndpoint, config.splunkHostedModelToken, config.splunkHostedModelName]);
+
   /** Runs a tiny live query ("index=_internal | head 1") to prove live Splunk connection.
    *  Uses MCP if configured, else REST. Records the verified timestamp on success. */
   const verifyLiveConnection = useCallback(async () => {
@@ -432,12 +499,14 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
           mcp_server_name: config.mcpServerName || null,
           mcp_server_version: config.mcpServerVersion || null,
           mcp_tool_list: config.mcpToolList.length > 0 ? config.mcpToolList : null,
+          ssl_verify: config.sslVerify,
           mode: config.splunkHost && config.splunkToken ? config.mode : 'demo',
           last_connected_at: config.lastConnectedAt,
           last_live_verified_at: config.lastLiveVerifiedAt,
           reasoning_provider: config.reasoningProvider,
           splunk_hosted_model_endpoint: config.splunkHostedModelEndpoint || null,
           splunk_hosted_model_token: config.splunkHostedModelToken || null,
+          splunk_hosted_model_name: config.splunkHostedModelName || null,
           updated_at: new Date().toISOString(),
           pagerduty_routing_key: config.pagerdutyRoutingKey || null,
           alert_email: config.alertEmail || null,
@@ -467,6 +536,10 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
         isRest: !!(config.splunkHost && config.splunkToken) && !(!!config.splunkMcpUrl && (
           config.mcpAuthMethod === 'basic' ? !!config.splunkMcpUsername : true
         )),
+        isHostedModelActive:
+          config.reasoningProvider === 'splunk-hosted-model' &&
+          !!config.splunkHostedModelEndpoint &&
+          !!config.splunkHostedModelToken,
         isSaving,
         isTesting,
         testResult,
@@ -477,11 +550,15 @@ export function SplunkProvider({ children }: { children: ReactNode }) {
         isVerifyingLive,
         verifyLiveResult,
         verifyLiveError,
+        isHostedModelTesting,
+        hostedModelTestResult,
+        hostedModelTestError,
         updateConfig,
         saveConfig,
         testConnection,
         testMcpConnection,
         verifyLiveConnection,
+        testHostedModelConnection,
       }}>
         {children}
       </SplunkContext.Provider>

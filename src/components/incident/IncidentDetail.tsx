@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { SeverityBadge, StatusBadge, ConfidenceBar } from '@/components/ui/badges';
 import { RunbookPanel } from '@/components/RunbookPanel';
 import { AnalysisDiff } from '@/components/incident/AnalysisDiff';
-import { AnalysisSourceBadge } from '@/components/incident/AnalysisSourceBadge';
+import { AnalysisSourceBadge, ReasoningSourceBadge } from '@/components/incident/AnalysisSourceBadge';
 import { RuntimeEvidencePanel, downloadDiagnosticReport, type RuntimeTrace } from '@/components/incident/RuntimeEvidencePanel';
 import type { Incident, AnalysisResult } from '@/types/types';
 import {
@@ -814,9 +814,17 @@ function AnalysisDisplay({ analysis, incidentId, incidentService }: {
 }) {
   return (
     <div className="space-y-3">
-      {/* Runtime source + evidence row */}
+      {/* Dual-layer runtime source row */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <AnalysisSourceBadge splunkMode={analysis.splunkMode} size="md" />
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Evidence badge */}
+          <AnalysisSourceBadge splunkMode={analysis.evidenceSource ?? analysis.splunkMode} size="md" />
+          {/* Reasoning badge */}
+          <ReasoningSourceBadge
+            reasoningSource={analysis.reasoningSource ?? analysis.runtimeTrace?.reasoningSource ?? analysis.runtimeTrace?.reasoningProvider}
+            size="md"
+          />
+        </div>
         {analysis.runtimeTrace && (
           <button
             className="text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors underline underline-offset-2"
@@ -829,38 +837,58 @@ function AnalysisDisplay({ analysis, incidentId, incidentService }: {
       </div>
 
       {/* Demo watermark */}
-      {(!analysis.splunkMode || analysis.splunkMode === 'demo') && (
+      {(!analysis.evidenceSource && (!analysis.splunkMode || analysis.splunkMode === 'demo')) && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-600/40 bg-amber-950/20 px-3 py-2">
+          <Database className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+          <span className="text-[11px] text-amber-300 font-medium">DEMO DATA — analysis based on sample data, not live Splunk</span>
+        </div>
+      )}
+      {analysis.evidenceSource === 'demo' && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-600/40 bg-amber-950/20 px-3 py-2">
           <Database className="h-3.5 w-3.5 text-amber-400 shrink-0" />
           <span className="text-[11px] text-amber-300 font-medium">DEMO DATA — analysis based on sample data, not live Splunk</span>
         </div>
       )}
 
-      {/* Collapsible Runtime Evidence panel */}
+      {/* Collapsible Runtime Diagnostics panel */}
       {analysis.runtimeTrace && (
-        <RuntimeEvidencePanel trace={analysis.runtimeTrace} />
+        <RuntimeEvidencePanel trace={{
+          ...analysis.runtimeTrace,
+          evidenceSource: analysis.evidenceSource ?? analysis.runtimeTrace.evidenceSource,
+          reasoningSource: analysis.reasoningSource ?? analysis.runtimeTrace.reasoningSource,
+          usedLiveSplunk: analysis.usedLiveSplunk ?? analysis.runtimeTrace.usedLiveSplunk,
+          usedSplunkHostedModel: analysis.usedSplunkHostedModel ?? analysis.runtimeTrace.usedSplunkHostedModel,
+        }} />
       )}
       {/* AI Brief */}
       {analysis.aiBrief && (
         <Section title="AI Incident Brief" icon={Zap} defaultOpen>
           <div className="space-y-3">
-            {/* Reasoning attribution banner */}
-            {analysis.runtimeTrace?.reasoningProvider && (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-1.5">
-                <Brain className="h-3 w-3 text-muted-foreground shrink-0" />
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  Reasoned by&nbsp;
-                  <span className={analysis.runtimeTrace.reasoningProvider === 'splunk-hosted-model'
-                    ? 'text-purple-400 font-semibold'
-                    : 'text-primary font-semibold'
-                  }>
-                    {analysis.runtimeTrace.reasoningProvider === 'splunk-hosted-model'
-                      ? 'Splunk Hosted Model'
-                      : analysis.runtimeTrace.reasoningProvider}
-                  </span>
+            {/* Dual-layer reasoning attribution banner */}
+            <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-1.5 flex-wrap">
+              <Brain className="h-3 w-3 text-muted-foreground shrink-0" />
+              <span className="text-[10px] font-mono text-muted-foreground">
+                Evidence:&nbsp;
+                <span className={cn(
+                  'font-semibold',
+                  (analysis.evidenceSource ?? analysis.splunkMode) === 'live-mcp' ? 'text-emerald-400' :
+                  (analysis.evidenceSource ?? analysis.splunkMode) === 'live-rest' ? 'text-blue-400' : 'text-amber-400',
+                )}>
+                  {(analysis.evidenceSource ?? analysis.splunkMode) === 'live-mcp' ? 'Live Splunk MCP' :
+                   (analysis.evidenceSource ?? analysis.splunkMode) === 'live-rest' ? 'Live Splunk REST' : 'Demo data'}
                 </span>
-              </div>
-            )}
+                &nbsp;·&nbsp;Reasoning:&nbsp;
+                <span className={cn(
+                  'font-semibold',
+                  (analysis.reasoningSource ?? analysis.runtimeTrace?.reasoningSource ?? analysis.runtimeTrace?.reasoningProvider) === 'splunk-hosted-model'
+                    ? 'text-orange-400' : 'text-blue-400',
+                )}>
+                  {(analysis.reasoningSource ?? analysis.runtimeTrace?.reasoningSource ?? analysis.runtimeTrace?.reasoningProvider) === 'splunk-hosted-model'
+                    ? 'Splunk Hosted Model'
+                    : (analysis.reasoningSource ?? analysis.runtimeTrace?.reasoningProvider ?? 'Gemini')}
+                </span>
+              </span>
+            </div>
             {analysis.aiBrief.executiveSummary && (
               <div>
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Executive Summary</p>

@@ -2,7 +2,222 @@
 
 > **Splunk Agentic Ops Hackathon 2026 · Observability Track**
 
-SentinelOps transforms noisy Splunk signals into guided incident response. Select an incident, click **Analyze**, and within seconds you get: ranked root-cause hypotheses with confidence scores, blast-radius calculation, a correlated event timeline, and AI-recommended next actions — all powered by live Splunk data via **MCP Server 1.2** or **REST API**, with reasoning provided by Gemini 2.5 Flash or a configurable Splunk Hosted Model.
+SentinelOps transforms noisy Splunk signals into guided incident response. Select an incident, click **Analyze**, and within seconds you get: ranked root-cause hypotheses with confidence scores, blast-radius calculation, a correlated event timeline, and AI-recommended next actions — all powered by live Splunk data via **MCP Server 1.2** or **REST API**, with reasoning provided by **Gemini 2.5 Flash** or a real **Splunk Hosted Model** (Splunk Cloud Platform only).
+
+---
+
+## Hybrid Dual-Layer Architecture
+
+SentinelOps separates evidence gathering from AI reasoning into two **independently configurable and independently attributed layers**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        SentinelOps                          │
+│                                                             │
+│  ┌───────────────────────────┐  ┌─────────────────────────┐ │
+│  │   LAYER A — EVIDENCE      │  │  LAYER B — REASONING    │ │
+│  │                           │  │                         │ │
+│  │  Local Splunk Enterprise  │  │  Gemini 2.5 Flash       │ │
+│  │  ├─ REST API (:8089)      │  │  (via Medo gateway)     │ │
+│  │  └─ MCP Server 1.2        │  │          OR             │ │
+│  │     (/services/mcp)       │  │  Splunk Hosted Model    │ │
+│  │                           │  │  (Splunk Cloud Platform │ │
+│  └───────────────────────────┘  │   — OpenAI compat API)  │ │
+│                                 └─────────────────────────┘ │
+│                                                             │
+│  Every result records: evidenceSource + reasoningSource     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key design principle**: Splunk Enterprise (local) provides the **evidence** (live log data, deployment events, service metadata). The **reasoning** (analysis brief, hypotheses, remediation narrative) is provided by a separately configured AI provider. Both are explicitly labelled in the UI and in every result payload.
+
+> ⚠️ **Important distinction**: Splunk Foundation Models / AI Assistant are available on **Splunk Cloud Platform only**. They are **not available on local Splunk Enterprise**. Local Enterprise contributes evidence — not hosted AI inference.
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+pnpm install
+
+# 2. Start development server
+pnpm dev
+```
+
+**Demo login** — `admin` / `S3ntin3l$Ops#Admin2026!`  
+Or register a new account directly on the login page.
+
+> No Splunk instance required — Demo Mode ships with five pre-loaded incidents across checkout-service, payment-api, auth-service, inventory-service, and notification-service.
+
+---
+
+## Installation & Configuration
+
+### 1. Environment Variables
+
+Variables are injected automatically by the Supabase + Vite build pipeline. For local development, create `.env.local`:
+
+```env
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
+```
+
+For judge/CI deployments without a UI, set these Supabase secrets so the edge function can connect without user-entered credentials:
+
+```
+SPLUNK_HOST=https://your-splunk-instance:8089
+SPLUNK_TOKEN=your-splunk-hec-or-rest-token
+SPLUNK_MCP_URL=https://your-ngrok-or-mcp-url/services/mcp
+SPLUNK_MCP_TOKEN=your-mcp-bearer-token
+```
+
+### 2. Supabase Setup
+
+The project requires the following tables (all created by existing migrations):
+
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User profiles linked to Supabase Auth |
+| `splunk_configs` | Per-user Splunk + MCP + AI + alert settings (includes `ssl_verify`, `splunk_hosted_model_name`) |
+| `live_incidents` | Real-time incident feed (Realtime enabled) |
+| `incident_analyses` | Cached AI analysis results per incident |
+| `spl_query_history` | Per-user NL→SPL query history |
+| `alert_notifications` | Per-user alert notification history |
+| `alert_rules` | User-defined alert routing rules |
+
+### 3. Layer A — Splunk Evidence Configuration
+
+Three evidence modes — configured in **Settings → Evidence Layer (Section A)**:
+
+| Mode | Header badge | How to enable |
+|------|-------------|--------------|
+| **Demo** | `DEMO` | Default. No configuration needed. |
+| **Splunk REST API** | `LIVE · REST` (blue) | Enter Splunk base URL + token. Recommend `https://localhost:8089` for local. |
+| **Splunk MCP Server 1.2** | `LIVE · MCP` (green) | Enter MCP endpoint URL + bearer token. Recommend `https://localhost:8089/services/mcp`. |
+
+**Priority**: MCP takes precedence over REST when both are configured.
+
+**ngrok for local Splunk**: Run `ngrok http https://localhost:8089`, then enter the resulting `https://<subdomain>.ngrok-free.app` as the REST/MCP base URL. Supabase Edge Functions require valid TLS — ngrok provides this automatically. Toggle "Skip ngrok warning" if needed.
+
+**SSL**: For local Splunk with self-signed certificates, SSL verification is noted in settings. Note: Supabase Edge Functions cannot bypass SSL verification natively — use ngrok for local dev.
+
+**Test buttons**: Separate "Test REST Connection" and "Test MCP Connection" buttons in Section A. Use "Verify Live Splunk" for an end-to-end data retrieval check.
+
+### 4. Layer B — Reasoning Provider Configuration
+
+Configured in **Settings → Reasoning Provider (Section B)**:
+
+| Provider | Badge | Notes |
+|----------|-------|-------|
+| **Gemini 2.5 Flash** | `GEMINI` | Default. No credentials needed. Via platform gateway. |
+| **Splunk Hosted Model** | `SPLUNK HOSTED MODEL` | Requires real Splunk Cloud Platform instance with AI enabled. Enter endpoint URL, token, and model name. Test inference before use. |
+
+> **Splunk Hosted Model requires Splunk Cloud Platform** — it is not available on local Splunk Enterprise. If you select this option without a valid Splunk Cloud AI endpoint, the app falls back to Gemini and clearly labels it as such.
+
+---
+
+## Judge-Safe Status Bar
+
+Every page in SentinelOps shows a real-time status bar with three indicators:
+
+| Indicator | Values |
+|-----------|--------|
+| **Evidence** | `LIVE · SPLUNK MCP` / `LIVE · SPLUNK REST` / `DEMO MODE` |
+| **Splunk Hosted Model** | `ON` (orange, pulsing) / `OFF` |
+| **Reasoning** | `GEMINI` / `SPLUNK HOSTED MODEL` / `GEMINI (fallback)` |
+
+Judges can verify the live status at a glance without reading code.
+
+---
+
+## Dual Badges on Every Analysis Card
+
+Every completed analysis shows two side-by-side badges:
+
+1. **Evidence badge**: `LIVE · SPLUNK MCP`, `LIVE · SPLUNK REST`, or `DEMO`
+2. **Reasoning badge**: `SPLUNK HOSTED MODEL`, `GEMINI`, `OPENAI`, etc.
+
+Plus a collapsible **Runtime Diagnostics** panel showing:
+- REST/MCP endpoint used
+- MCP tool called (`splunk_run_query` / `splunk_run_search`)
+- SPL queries issued
+- Row counts returned (errors, deploys, metadata)
+- Reasoning provider endpoint/model
+- Whether each part was live, fallback, or failed
+- Downloadable full diagnostic JSON report
+
+---
+
+## Runtime Transparency Fields
+
+Every analysis result payload includes:
+
+```json
+{
+  "evidenceSource":        "live-mcp | live-rest | demo",
+  "reasoningSource":       "splunk-hosted-model | gemini | unknown",
+  "usedLiveSplunk":        true,
+  "usedSplunkHostedModel": false,
+  "runtimeTrace": { ... }
+}
+```
+
+Judges can download the full diagnostic JSON from any analysis card.
+
+---
+
+## Error Handling — No Silent Fallback
+
+SentinelOps **never silently replaces live data with demo data** when Splunk credentials are configured:
+
+- **MCP failure** → shows `error-mcp` with full error message; offers "Retry" or "Use demo mode"
+- **REST failure** → shows `error-rest` with full error message; offers "Retry" or "Use demo mode"  
+- **Demo mode** is only used when: (a) no credentials configured, or (b) user explicitly selects it after a failure
+
+---
+
+## MCP Protocol Details
+
+SentinelOps implements Splunk MCP Server 1.2 (JSON-RPC 2.0):
+
+- **Endpoint**: `https://<splunk-host>:8089/services/mcp`
+- **Method**: `tools/call`
+- **Tool names tried**: `splunk_run_query` → `splunk_run_search` → `run_search`
+- **Auth**: Bearer token (or Basic if configured)
+- **ngrok support**: Auto-detects ngrok URLs and injects `ngrok-skip-browser-warning: true`
+
+---
+
+## Feature Overview
+
+| Feature | Description |
+|---------|-------------|
+| Incident list + real-time alerts | Live DB feed with Supabase Realtime |
+| AI incident analysis | Evidence → Reasoning dual-layer pipeline |
+| Streaming brief | Token-by-token SSE streaming from LLM |
+| Root-cause hypotheses | Ranked with confidence scores |
+| Blast radius | Affected services, endpoints, revenue impact |
+| Timeline reconstruction | Correlated events sorted chronologically |
+| Follow-up Q&A | Context-aware questions answered by LLM |
+| NL→SPL via MCP | Natural language to SPL via MCP tool calls |
+| PagerDuty integration | Sync incidents, escalate, acknowledge |
+| Slack notifications | Webhook-based alert routing |
+| Custom alert rules | Keyword + severity routing |
+| MTTR tracking | Moving average with configurable threshold |
+| Judge Demo Mode | One-click walkthrough with sample data |
+| Downloadable diagnostics | Full runtime trace as JSON |
+| Dark mode | Full theme support |
+
+---
+
+## Architecture Reference
+
+See [`tasks/HACKATHON_ARCHITECTURE_NOTE.md`](./tasks/HACKATHON_ARCHITECTURE_NOTE.md) for:
+- Detailed safe vs. unsafe claims for each configuration mode
+- MCP protocol message format
+- Full list of transparency fields
+- What NOT to claim in a hackathon submission
 
 ---
 

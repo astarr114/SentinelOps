@@ -123,6 +123,16 @@ export interface AnalysisResult {
   metadata: ServiceMetadata | null;
   generatedAt: string;
   suggestedQueries?: string[];
+
+  // ── Hybrid architecture transparency fields ─────────────────────────────────
+  /** Where evidence was gathered from */
+  evidenceSource?: 'live-mcp' | 'live-rest' | 'demo';
+  /** Which AI provider produced the reasoning */
+  reasoningSource?: 'splunk-hosted-model' | 'gemini' | 'openai' | 'anthropic' | 'grok' | 'deepseek' | 'unknown';
+  /** True when evidence came from a live Splunk instance (MCP or REST) */
+  usedLiveSplunk?: boolean;
+  /** True when reasoning used a Splunk Hosted Model endpoint */
+  usedSplunkHostedModel?: boolean;
 }
 
 export interface FollowUpResponse {

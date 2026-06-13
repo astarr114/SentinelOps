@@ -20,13 +20,14 @@ import { toast } from 'sonner';
 import { getIncidents } from '@/lib/mockDataService';
 import type { Incident, AnalysisResult } from '@/types/types';
 import type { RuntimeTrace } from '@/components/incident/RuntimeEvidencePanel';
+import { AnalysisSourceBadge, ReasoningSourceBadge } from '@/components/incident/AnalysisSourceBadge';
 import { PagerDutyStatusPanel } from '@/components/PagerDutyStatusPanel';
 import {
   LogOut, Menu, MessageSquare, Wrench, User, Settings, Database, Radio,
   Keyboard, Sun, Moon, RefreshCw, BarChart2, History, AlertTriangle,
   Zap, GitMerge, BookOpen, RotateCcw, ShieldCheck, Brain, Lock, FileText,
   Target, Sparkles, Cpu, ChevronDown, ChevronRight, PlayCircle, CheckCircle2, FlaskConical,
-  MoreHorizontal, LayoutDashboard, Map, WifiOff,
+  MoreHorizontal, LayoutDashboard, Map, WifiOff, BrainCircuit, Server, Info,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
@@ -42,7 +43,7 @@ type RightPanel = 'followup' | 'tools' | 'pd';
 
 export default function DashboardPage() {
   const { profile, signOut } = useAuth();
-  const { isLive, isMcp, isRest, isConfigLoading, config: splunkConfig } = useSplunk();
+  const { isLive, isMcp, isRest, isConfigLoading, isHostedModelActive, config: splunkConfig } = useSplunk();
   const { activeLlm, buildFallbackChain } = useLlm();
   const { theme, toggleTheme } = useTheme();
   const { config: appConfig } = useAppConfig();
@@ -674,6 +675,77 @@ export default function DashboardPage() {
           currentMttrMinutes={sevenDayMttr}
           thresholdMinutes={appConfig.mttr_threshold_minutes}
         />
+      )}
+
+      {/* ── Judge-safe architecture status bar ───────────────────────────── */}
+      {!isConfigLoading && (
+        <div className="shrink-0 border-b border-border/60 bg-secondary/20 px-4 py-1.5 flex items-center gap-3 flex-wrap">
+          {/* Live Splunk Evidence status */}
+          <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            <Server className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="text-muted-foreground/70">Evidence:</span>
+            {isLive && isMcp ? (
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                LIVE · SPLUNK MCP
+              </span>
+            ) : isLive && isRest ? (
+              <span className="flex items-center gap-1 text-blue-400 font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse shrink-0" />
+                LIVE · SPLUNK REST
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-amber-400/80">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400/60 shrink-0" />
+                DEMO MODE
+              </span>
+            )}
+          </div>
+
+          <span className="text-border/60 select-none">·</span>
+
+          {/* Splunk Hosted Model status */}
+          <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            <FlaskConical className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="text-muted-foreground/70">Splunk Hosted Model:</span>
+            {isHostedModelActive ? (
+              <span className="flex items-center gap-1 text-orange-400 font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse shrink-0" />
+                ON
+              </span>
+            ) : (
+              <span className="text-muted-foreground/60">OFF</span>
+            )}
+          </div>
+
+          <span className="text-border/60 select-none">·</span>
+
+          {/* Current reasoning provider */}
+          <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            <BrainCircuit className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="text-muted-foreground/70">Reasoning:</span>
+            <span className={cn(
+              'font-semibold',
+              isHostedModelActive ? 'text-orange-400' : 'text-blue-400',
+            )}>
+              {isHostedModelActive
+                ? 'SPLUNK HOSTED MODEL'
+                : (splunkConfig.reasoningProvider === 'splunk-hosted-model' ? 'GEMINI (fallback — hosted model not configured)' : 'GEMINI')}
+            </span>
+          </div>
+
+          <span className="flex-1 min-w-0" />
+
+          {/* Link to settings */}
+          <Link
+            to="/settings#reasoning-provider-section"
+            className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            title="Configure evidence and reasoning providers"
+          >
+            <Info className="h-3 w-3" />
+            <span className="hidden md:inline">Configure layers</span>
+          </Link>
+        </div>
       )}
 
       {/* Top Navigation Bar */}
