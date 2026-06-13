@@ -1,0 +1,57 @@
+[
+  {
+    "id": "DEP-2001",
+    "service": "checkout-service",
+    "version": "v1.8.3",
+    "deployed_by": "ci-pipeline",
+    "timestamp": "2026-05-21T10:37:00Z",
+    "environment": "production",
+    "status": "success",
+    "commit": "a3f8c12",
+    "change_summary": "Upgraded database connection pool library from pgpool v2.1 to v3.0. Changed default pool size from 20 to 10 for memory optimization. Updated query timeout from 5000ms to 2000ms."
+  },
+  {
+    "id": "DEP-2002",
+    "service": "checkout-service",
+    "version": "v1.8.2",
+    "deployed_by": "jsmith",
+    "timestamp": "2026-05-20T14:22:00Z",
+    "environment": "production",
+    "status": "success",
+    "commit": "b9d1e45",
+    "change_summary": "Added coupon validation endpoint. Updated cart merge logic. Fixed race condition in session handling."
+  },
+  {
+    "id": "DEP-2003",
+    "service": "payment-api",
+    "version": "v2.4.1",
+    "deployed_by": "ci-pipeline",
+    "timestamp": "2026-05-21T08:50:00Z",
+    "environment": "production",
+    "status": "success",
+    "commit": "c2a7f89",
+    "change_summary": "Updated payment processor SDK to v4.2.0. Added retry logic with exponential backoff. New webhook signature validation."
+  },
+  {
+    "id": "DEP-2004",
+    "service": "auth-service",
+    "version": "v3.1.0",
+    "deployed_by": "mwilliams",
+    "timestamp": "2026-05-20T09:15:00Z",
+    "environment": "production",
+    "status": "success",
+    "commit": "d5b3c22",
+    "change_summary": "Migrated session storage to Redis cluster. Updated JWT token expiration from 1h to 15m for security. Added refresh token rotation."
+  },
+  {
+    "id": "DEP-2005",
+    "service": "inventory-service",
+    "version": "v1.5.8",
+    "deployed_by": "ci-pipeline",
+    "timestamp": "2026-05-19T16:45:00Z",
+    "environment": "production",
+    "status": "success",
+    "commit": "e9f4a11",
+    "change_summary": "Added real-time inventory subscription via WebSocket. Implemented bulk reservation endpoint. Updated caching strategy for product catalog."
+  }
+]

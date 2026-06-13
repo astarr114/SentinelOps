@@ -1,0 +1,68 @@
+[
+  {
+    "id": "ALT-3001",
+    "service": "checkout-service",
+    "alert_name": "HighP99Latency",
+    "severity": "CRITICAL",
+    "triggered_at": "2026-05-21T10:42:15Z",
+    "value": 3241,
+    "threshold": 500,
+    "unit": "ms",
+    "description": "P99 response latency exceeded 500ms threshold. Current value: 3241ms on /checkout endpoint."
+  },
+  {
+    "id": "ALT-3002",
+    "service": "checkout-service",
+    "alert_name": "DBConnectionPoolExhaustion",
+    "severity": "CRITICAL",
+    "triggered_at": "2026-05-21T10:43:02Z",
+    "value": 10,
+    "threshold": 20,
+    "unit": "connections",
+    "description": "Database connection pool exhausted. Available: 10/10 (pool size reduced from 20 to 10 in v1.8.3 deployment). Requests queuing."
+  },
+  {
+    "id": "ALT-3003",
+    "service": "checkout-service",
+    "alert_name": "ErrorRateHigh",
+    "severity": "HIGH",
+    "triggered_at": "2026-05-21T10:44:30Z",
+    "value": 38.2,
+    "threshold": 5,
+    "unit": "percent",
+    "description": "HTTP 5xx error rate exceeded 5% threshold. Current: 38.2%. Majority are 504 Gateway Timeout from DB queries."
+  },
+  {
+    "id": "ALT-3004",
+    "service": "checkout-service",
+    "alert_name": "CheckoutSuccessRateLow",
+    "severity": "CRITICAL",
+    "triggered_at": "2026-05-21T10:45:00Z",
+    "value": 61,
+    "threshold": 95,
+    "unit": "percent",
+    "description": "Checkout completion rate dropped to 61%. Normal baseline is 97%. Active revenue impact estimated at $4,200/min."
+  },
+  {
+    "id": "ALT-3005",
+    "service": "payment-api",
+    "alert_name": "CircuitBreakerOpen",
+    "severity": "HIGH",
+    "triggered_at": "2026-05-21T09:18:00Z",
+    "value": 1,
+    "threshold": 0,
+    "unit": "state",
+    "description": "Circuit breaker for payment-processor gateway opened. Failure rate exceeded 50% over 60s window. Fallback activated."
+  },
+  {
+    "id": "ALT-3006",
+    "service": "auth-service",
+    "alert_name": "CacheHitRatioLow",
+    "severity": "MEDIUM",
+    "triggered_at": "2026-05-21T08:35:00Z",
+    "value": 67,
+    "threshold": 85,
+    "unit": "percent",
+    "description": "Redis cache hit ratio for session validation dropped from 94% to 67%. Increased load on auth DB."
+  }
+]

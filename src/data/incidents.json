@@ -1,0 +1,62 @@
+[
+  {
+    "id": "INC-1001",
+    "title": "checkout-service latency spike post-deployment",
+    "service": "checkout-service",
+    "severity": "CRITICAL",
+    "status": "INVESTIGATING",
+    "opened_at": "2026-05-21T10:42:00Z",
+    "summary": "P99 latency exceeded 3s threshold (baseline 280ms) following deployment of v1.8.3. Database timeout exceptions rose 3.8x. Checkout success rate dropped to 61%.",
+    "time_window": "last_30m",
+    "affected_endpoints": ["/checkout", "/payment/submit", "/cart/validate"],
+    "tags": ["deployment", "database", "latency", "revenue-impact"]
+  },
+  {
+    "id": "INC-1002",
+    "title": "payment-api 5xx error surge",
+    "service": "payment-api",
+    "severity": "HIGH",
+    "status": "OPEN",
+    "opened_at": "2026-05-21T09:15:00Z",
+    "summary": "payment-api returning HTTP 503 at 12% of requests. Upstream timeout from payment processor gateway. Circuit breaker opened at 09:18.",
+    "time_window": "last_1h",
+    "affected_endpoints": ["/payment/submit", "/payment/status", "/payment/refund"],
+    "tags": ["external-dependency", "circuit-breaker", "payment"]
+  },
+  {
+    "id": "INC-1003",
+    "title": "auth-service slow login degradation",
+    "service": "auth-service",
+    "severity": "MEDIUM",
+    "status": "OPEN",
+    "opened_at": "2026-05-21T08:30:00Z",
+    "summary": "Token validation latency increased from 45ms to 320ms average. Redis session cache hit ratio fell from 94% to 67%. No errors yet, but trending toward impact threshold.",
+    "time_window": "last_2h",
+    "affected_endpoints": ["/auth/login", "/auth/token/validate", "/auth/refresh"],
+    "tags": ["cache", "redis", "auth", "degradation"]
+  },
+  {
+    "id": "INC-1004",
+    "title": "inventory-service memory leak",
+    "service": "inventory-service",
+    "severity": "HIGH",
+    "status": "OPEN",
+    "opened_at": "2026-05-21T07:00:00Z",
+    "summary": "Container memory usage at 94% and climbing. GC pause times increasing. Two pods have OOMKilled in the last hour. Service auto-restarting every ~45 minutes.",
+    "time_window": "last_4h",
+    "affected_endpoints": ["/inventory/check", "/inventory/reserve"],
+    "tags": ["memory", "oom", "kubernetes"]
+  },
+  {
+    "id": "INC-1005",
+    "title": "notification-service queue backlog",
+    "service": "notification-service",
+    "severity": "LOW",
+    "status": "RESOLVED",
+    "opened_at": "2026-05-21T06:00:00Z",
+    "summary": "Email notification queue depth reached 50k messages. Processing delay of 35 minutes for transactional emails. Root cause: undersized consumer group. Scaled to 6 consumers. Resolved at 07:45.",
+    "time_window": "last_6h",
+    "affected_endpoints": ["/notifications/send", "/notifications/status"],
+    "tags": ["queue", "kafka", "scaling", "resolved"]
+  }
+]

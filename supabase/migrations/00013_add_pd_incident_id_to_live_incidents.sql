@@ -1,0 +1,1 @@
+ALTER TABLE live_incidents ADD COLUMN IF NOT EXISTS pd_incident_id text UNIQUE;

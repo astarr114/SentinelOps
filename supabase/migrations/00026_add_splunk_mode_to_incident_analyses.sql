@@ -1,0 +1,1 @@
+ALTER TABLE incident_analyses ADD COLUMN splunk_mode text NOT NULL DEFAULT 'demo';

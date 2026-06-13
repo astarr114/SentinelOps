@@ -1,0 +1,59 @@
+{
+  "services": [
+    {
+      "name": "checkout-service",
+      "team": "commerce-platform",
+      "tier": 1,
+      "language": "Java 17",
+      "version": "v1.8.3",
+      "dependencies": ["payment-api", "inventory-service", "auth-service", "postgres-primary", "redis-session"],
+      "on_call": "commerce-oncall@company.com",
+      "sla_ms": 500,
+      "repo": "github.com/company/checkout-service"
+    },
+    {
+      "name": "payment-api",
+      "team": "payments",
+      "tier": 1,
+      "language": "Node.js 20",
+      "version": "v2.4.1",
+      "dependencies": ["stripe-gateway", "fraud-service", "auth-service", "postgres-payments"],
+      "on_call": "payments-oncall@company.com",
+      "sla_ms": 800,
+      "repo": "github.com/company/payment-api"
+    },
+    {
+      "name": "auth-service",
+      "team": "platform-security",
+      "tier": 1,
+      "language": "Go 1.22",
+      "version": "v3.1.0",
+      "dependencies": ["redis-session", "postgres-auth", "ldap-gateway"],
+      "on_call": "platform-oncall@company.com",
+      "sla_ms": 100,
+      "repo": "github.com/company/auth-service"
+    },
+    {
+      "name": "inventory-service",
+      "team": "catalog",
+      "tier": 2,
+      "language": "Python 3.12",
+      "version": "v1.5.8",
+      "dependencies": ["postgres-catalog", "redis-inventory", "event-bus"],
+      "on_call": "catalog-oncall@company.com",
+      "sla_ms": 200,
+      "repo": "github.com/company/inventory-service"
+    },
+    {
+      "name": "notification-service",
+      "team": "platform",
+      "tier": 3,
+      "language": "Python 3.12",
+      "version": "v1.2.4",
+      "dependencies": ["kafka", "ses-gateway", "templates-service"],
+      "on_call": "platform-oncall@company.com",
+      "sla_ms": 5000,
+      "repo": "github.com/company/notification-service"
+    }
+  ]
+}

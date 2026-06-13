@@ -1,0 +1,30 @@
+id: no-type-component-name-collision
+language: TypeScript
+message: |
+  Potential export name collision: a function or const named '$NAME' is exported from this file.
+  Ensure no 'export type $NAME = ...' exists in the same file — such collisions cause bundler
+  ambiguity where the React context provider may silently fail to wrap the component tree.
+  Fix: rename either the type (e.g. MyProviderType) or the component (e.g. MyContextProvider).
+severity: warning
+files:
+  - src/**/*.ts
+  - src/**/*.tsx
+rule:
+  any:
+    # Flag any exported function whose name ends with "Provider" (high-risk for context collisions)
+    - pattern: |
+        export function $NAME({ $$$PROPS }: { $$$TYPE }) {
+          $$$BODY
+        }
+      inside:
+        kind: program
+      where:
+        NAME:
+          regex: "Provider$"
+    - pattern: |
+        export const $NAME = ($$$) => {
+          $$$BODY
+        }
+      where:
+        NAME:
+          regex: "Provider$"

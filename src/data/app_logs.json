@@ -1,0 +1,56 @@
+[
+  {
+    "pattern": "com.zaxxer.hikari.pool.HikariPool: Timeout waiting for connection from pool",
+    "count": 847,
+    "first_seen": "2026-05-21T10:42:18Z",
+    "last_seen": "2026-05-21T11:08:45Z",
+    "severity": "critical",
+    "service": "checkout-service",
+    "sample": "2026-05-21 10:42:18 ERROR HikariPool-1 - Timeout after 2000ms waiting for connection. Pool size: 10/10 active."
+  },
+  {
+    "pattern": "java.sql.SQLTimeoutException: Query execution timeout after 2000ms",
+    "count": 623,
+    "first_seen": "2026-05-21T10:42:22Z",
+    "last_seen": "2026-05-21T11:08:40Z",
+    "severity": "critical",
+    "service": "checkout-service",
+    "sample": "2026-05-21 10:42:22 ERROR [checkout-worker-3] SQLTimeoutException: select * from orders where user_id=? AND status='pending' - exceeded 2000ms"
+  },
+  {
+    "pattern": "org.springframework.web.client.ResourceAccessException: I/O error on POST /payment/submit",
+    "count": 312,
+    "first_seen": "2026-05-21T10:43:05Z",
+    "last_seen": "2026-05-21T11:07:22Z",
+    "severity": "error",
+    "service": "checkout-service",
+    "sample": "2026-05-21 10:43:05 ERROR ResourceAccessException: I/O error calling payment-api /payment/submit: Connection refused after 3 retries"
+  },
+  {
+    "pattern": "WARN Connection pool utilization at 100%",
+    "count": 1204,
+    "first_seen": "2026-05-21T10:42:10Z",
+    "last_seen": "2026-05-21T11:09:00Z",
+    "severity": "warn",
+    "service": "checkout-service",
+    "sample": "2026-05-21 10:42:10 WARN HikariPool-1 has reached maximum capacity (10/10). Consider increasing maximumPoolSize."
+  },
+  {
+    "pattern": "ERROR [payment-api] upstream payment processor timeout",
+    "count": 189,
+    "first_seen": "2026-05-21T09:12:00Z",
+    "last_seen": "2026-05-21T10:30:00Z",
+    "severity": "error",
+    "service": "payment-api",
+    "sample": "2026-05-21 09:12:00 ERROR stripe-gateway timeout after 5000ms. requestId=pi_3N2abc123 amount=4999"
+  },
+  {
+    "pattern": "WARN Redis connection latency high",
+    "count": 456,
+    "first_seen": "2026-05-21T08:30:00Z",
+    "last_seen": "2026-05-21T10:00:00Z",
+    "severity": "warn",
+    "service": "auth-service",
+    "sample": "2026-05-21 08:30:22 WARN redis-cluster response time 340ms (threshold 50ms). Session lookups degraded."
+  }
+]
