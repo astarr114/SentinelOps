@@ -154,6 +154,17 @@ interface E2eTestResult {
   passCount: number;
   totalCount: number;
   assertions: E2eAssertion[];
+  runId?: string;
+}
+interface E2eHistoryRun {
+  id: string;
+  ran_at: string;
+  ok: boolean;
+  pass_count: number;
+  total_count: number;
+  duration_ms: number;
+  mcp_url: string;
+  assertions: E2eAssertion[];
 }
 
 export default function SettingsPage() {
@@ -578,6 +589,34 @@ export default function SettingsPage() {
   const [e2eRunning, setE2eRunning] = useState(false);
   const [e2eResult, setE2eResult] = useState(null as E2eTestResult | null);
   const [e2eError, setE2eError] = useState('');
+  const [e2eCustomQuery, setE2eCustomQuery] = useState('');
+  const [e2eCustomQueryName, setE2eCustomQueryName] = useState('');
+  const [e2eHistory, setE2eHistory] = useState<E2eHistoryRun[]>([]);
+  const [e2eHistoryLoading, setE2eHistoryLoading] = useState(false);
+  const [e2eExpandedRun, setE2eExpandedRun] = useState<string | null>(null);
+  const [e2eSplExpanded, setE2eSplExpanded] = useState<number | null>(null);
+
+  const loadE2eHistory = useCallback(async () => {
+    if (!profile?.id) return;
+    setE2eHistoryLoading(true);
+    try {
+      const { data } = await supabase
+        .from('e2e_test_runs')
+        .select('id, ran_at, ok, pass_count, total_count, duration_ms, mcp_url, assertions')
+        .eq('user_id', profile.id)
+        .order('ran_at', { ascending: false })
+        .limit(10);
+      setE2eHistory((data ?? []) as E2eHistoryRun[]);
+    } finally {
+      setE2eHistoryLoading(false);
+    }
+  }, [profile?.id]);
+
+  // Load history once when MCP section is visible
+  useEffect(() => {
+    if (config.splunkMcpUrl && profile?.id) loadE2eHistory();
+  }, [config.splunkMcpUrl, profile?.id, loadE2eHistory]);
+
   const handleRunE2eTest = useCallback(async () => {
     if (!config.splunkMcpUrl) return;
     setE2eRunning(true);
@@ -586,12 +625,13 @@ export default function SettingsPage() {
     try {
       const { data, error } = await supabase.functions.invoke('splunk-mcp-e2e', {
         body: {
-          mcpUrl:                    config.splunkMcpUrl,
-          mcpToken:                  config.splunkMcpToken,
-          mcpAuthMethod:             config.mcpAuthMethod,
-          mcpUsername:               config.splunkMcpUsername,
-          mcpPassword:               config.splunkMcpPassword,
-          // 4th assertion: hosted-model endpoint probe (omitted when not configured)
+          mcpUrl:        config.splunkMcpUrl,
+          mcpToken:      config.splunkMcpToken,
+          mcpAuthMethod: config.mcpAuthMethod,
+          mcpUsername:   config.splunkMcpUsername,
+          mcpPassword:   config.splunkMcpPassword,
+          userId:        profile?.id ?? '',
+          ...(e2eCustomQuery ? { customQuery: e2eCustomQuery, customQueryName: e2eCustomQueryName || 'Custom query' } : {}),
           ...(config.splunkHostedModelEndpoint
             ? { splunkHostedModelEndpoint: config.splunkHostedModelEndpoint,
                 splunkHostedModelToken:    config.splunkHostedModelToken }
@@ -605,12 +645,14 @@ export default function SettingsPage() {
         return;
       }
       setE2eResult(data as E2eTestResult);
+      // Refresh history after a successful run
+      loadE2eHistory();
     } catch (e) {
       setE2eError(e instanceof Error ? e.message : 'E2E test failed');
     } finally {
       setE2eRunning(false);
     }
-  }, [config]);
+  }, [config, profile?.id, e2eCustomQuery, e2eCustomQueryName, loadE2eHistory]);
 
   // Verbose auth debug: captures full request/response headers for 401 diagnosis
   const handleAuthDebug = async () => {
@@ -1627,12 +1669,37 @@ export default function SettingsPage() {
                     {e2eRunning ? 'Running…' : 'Run E2E Test'}
                   </Button>
                 </div>
+
+                {/* Custom query input */}
+                {config.splunkMcpUrl && (
+                  <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2.5 space-y-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Custom Assertion (optional)</p>
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        value={e2eCustomQueryName}
+                        onChange={e => setE2eCustomQueryName(e.target.value)}
+                        placeholder="Assertion label (e.g. My app index)"
+                        className="h-7 text-xs px-2"
+                      />
+                      <Input
+                        value={e2eCustomQuery}
+                        onChange={e => setE2eCustomQuery(e.target.value)}
+                        placeholder="index=myapp earliest=-1h | head 5"
+                        className="h-7 text-xs px-2 font-mono"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Enter a SPL query targeting your own index. It will run as a 4th assertion.</p>
+                  </div>
+                )}
+
                 {e2eError && (
                   <div className="flex items-start gap-2 rounded-lg border border-red-700/40 bg-red-950/20 px-3 py-2">
                     <XCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
                     <p className="text-xs text-red-300 break-words">{e2eError}</p>
                   </div>
                 )}
+
+                {/* Current run results */}
                 {e2eResult && (
                   <div className="space-y-2">
                     <div className={cn(
@@ -1646,12 +1713,16 @@ export default function SettingsPage() {
                         {e2eResult.passCount}/{e2eResult.totalCount} assertions passed
                       </span>
                       <span className="text-[10px] text-muted-foreground font-mono ml-auto">{e2eResult.durationMs}ms total</span>
+                      {e2eResult.runId && (
+                        <span className="text-[10px] text-muted-foreground/60 font-mono hidden md:inline">saved #{e2eResult.runId.slice(0, 8)}</span>
+                      )}
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-max text-[11px]">
                         <thead>
                           <tr className="border-b border-border">
                             <th className="text-left font-medium text-muted-foreground px-2 py-1.5 whitespace-nowrap">Assertion</th>
+                            <th className="text-left font-medium text-muted-foreground px-2 py-1.5 whitespace-nowrap">SPL</th>
                             <th className="text-center font-medium text-muted-foreground px-2 py-1.5 whitespace-nowrap">Result</th>
                             <th className="text-right font-medium text-muted-foreground px-2 py-1.5 whitespace-nowrap">Rows</th>
                             <th className="text-right font-medium text-muted-foreground px-2 py-1.5 whitespace-nowrap">Time</th>
@@ -1664,6 +1735,19 @@ export default function SettingsPage() {
                               <td className="px-2 py-1.5 text-foreground whitespace-nowrap">
                                 <div>{a.name}</div>
                                 {a.error && <div className="text-[10px] text-red-400 font-mono mt-0.5 max-w-xs truncate">{a.error}</div>}
+                              </td>
+                              <td className="px-2 py-1.5 max-w-[240px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setE2eSplExpanded(e2eSplExpanded === i ? null : i)}
+                                  className="text-left group"
+                                  title="Click to expand SPL"
+                                >
+                                  {e2eSplExpanded === i
+                                    ? <span className="font-mono text-[10px] text-foreground/80 whitespace-pre-wrap break-all leading-snug block">{a.spl}</span>
+                                    : <span className="font-mono text-[10px] text-muted-foreground truncate block max-w-[200px] group-hover:text-foreground/70 transition-colors">{a.spl}</span>
+                                  }
+                                </button>
                               </td>
                               <td className="px-2 py-1.5 text-center whitespace-nowrap">
                                 {a.passed
@@ -1680,6 +1764,73 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Run history */}
+                {config.splunkMcpUrl && (e2eHistory.length > 0 || e2eHistoryLoading) && (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <History className="h-3 w-3" />
+                      Past Runs
+                      {e2eHistoryLoading && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
+                    </p>
+                    <div className="space-y-1">
+                      {e2eHistory.map(run => (
+                        <div key={run.id} className="rounded-md border border-border/50 bg-background/30 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setE2eExpandedRun(e2eExpandedRun === run.id ? null : run.id)}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-background/60 transition-colors"
+                          >
+                            {run.ok
+                              ? <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                              : <XCircle className="h-3 w-3 text-red-400 shrink-0" />}
+                            <span className={cn('text-[10px] font-semibold shrink-0', run.ok ? 'text-emerald-400' : 'text-red-400')}>
+                              {run.pass_count}/{run.total_count}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono truncate flex-1 min-w-0">
+                              {new Date(run.ran_at).toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono shrink-0">{run.duration_ms}ms</span>
+                            <ChevronRight className={cn('h-3 w-3 text-muted-foreground/40 shrink-0 transition-transform', e2eExpandedRun === run.id && 'rotate-90')} />
+                          </button>
+                          {e2eExpandedRun === run.id && (
+                            <div className="px-3 pb-2 overflow-x-auto">
+                              <table className="w-full min-w-max text-[10px]">
+                                <thead>
+                                  <tr className="border-b border-border/40">
+                                    <th className="text-left font-medium text-muted-foreground px-1.5 py-1 whitespace-nowrap">Assertion</th>
+                                    <th className="text-left font-medium text-muted-foreground px-1.5 py-1 whitespace-nowrap">SPL</th>
+                                    <th className="text-center font-medium text-muted-foreground px-1.5 py-1 whitespace-nowrap">Result</th>
+                                    <th className="text-right font-medium text-muted-foreground px-1.5 py-1 whitespace-nowrap">Rows</th>
+                                    <th className="text-right font-medium text-muted-foreground px-1.5 py-1 whitespace-nowrap">Time</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(run.assertions as E2eAssertion[]).map((a, i) => (
+                                    <tr key={i} className="border-b border-border/30 last:border-0">
+                                      <td className="px-1.5 py-1 text-foreground/80 whitespace-nowrap">{a.name}</td>
+                                      <td className="px-1.5 py-1 max-w-[200px]">
+                                        <span className="font-mono text-muted-foreground truncate block max-w-[180px]" title={a.spl}>{a.spl}</span>
+                                      </td>
+                                      <td className="px-1.5 py-1 text-center whitespace-nowrap">
+                                        {a.passed
+                                          ? <span className="text-emerald-400">Pass</span>
+                                          : <span className="text-red-400">Fail</span>}
+                                      </td>
+                                      <td className="px-1.5 py-1 text-right font-mono text-muted-foreground whitespace-nowrap">{a.rowCount}</td>
+                                      <td className="px-1.5 py-1 text-right font-mono text-muted-foreground whitespace-nowrap">{a.durationMs}ms</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {!config.splunkMcpUrl && (
                   <p className="text-[10px] text-muted-foreground italic">Configure MCP Server URL above to enable E2E testing.</p>
                 )}
