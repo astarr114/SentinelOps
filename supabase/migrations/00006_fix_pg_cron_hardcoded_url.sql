@@ -7,7 +7,7 @@ SELECT cron.schedule(
   '0 * * * *',
   $$
     SELECT net.http_post(
-      url     := 'https://nzikncgaoxrhqgrckwzk.supabase.co/functions/v1/synthetic-alert-job',
+      url     := 'https://dfdefoceuttgtazlzlsh.supabase.co/functions/v1/synthetic-alert-job',
       headers := jsonb_build_object(
         'Content-Type',  'application/json',
         'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im56aWtuY2dhb3hyaHFncmNrd3prIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTMzMTk1MSwiZXhwIjoyMDk0OTA3OTUxfQ.3X9PW0zmuZFSvE4ZfAK_hTSjIGqin02A0hJQZIG_rmQ'
