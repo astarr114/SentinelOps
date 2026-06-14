@@ -284,7 +284,7 @@ export default function CompliancePackPage() {
       <header className="shrink-0 h-13 border-b border-border header-gradient flex items-center px-4 gap-3">
         <Link to="/"><Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /></Button></Link>
         <div className="flex items-center gap-2">
-          <img src="https://miaoda-conversation-file.s3cdn.medo.dev/user-b8uq3eatai9u/app-bs8qtod6o9hd/20260527/SentinelOps logo Final.png" alt="SentinelOps" className="h-7 w-7 object-contain shrink-0" />
+          <img src="/images/logo/sentinelops-logo.png" alt="SentinelOps" className="h-7 w-7 object-contain shrink-0" />
           <div className="hidden sm:flex flex-col leading-none">
             <span className="text-sm font-bold text-foreground tracking-tight">SentinelOps</span>
             <span className="text-[9px] text-muted-foreground/70 font-mono tracking-widest uppercase">Incident Commander</span>

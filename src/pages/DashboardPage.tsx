@@ -765,7 +765,7 @@ export default function DashboardPage() {
         {/* Brand */}
         <div className="flex items-center gap-2 shrink-0">
           <img
-            src="https://miaoda-conversation-file.s3cdn.medo.dev/user-b8uq3eatai9u/app-bs8qtod6o9hd/20260527/SentinelOps logo Final.png"
+            src="/images/logo/sentinelops-logo.png"
             alt="SentinelOps"
             className="h-8 w-8 object-contain shrink-0"
           />
@@ -1394,7 +1394,7 @@ function EmptyState({ incidents, onSelect }: { incidents: Incident[]; onSelect: 
         <div className="relative">
           <div className="h-20 w-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/5">
             <img
-              src="https://miaoda-conversation-file.s3cdn.medo.dev/user-b8uq3eatai9u/app-bs8qtod6o9hd/20260527/SentinelOps logo Final.png"
+              src="/images/logo/sentinelops-logo.png"
               alt="SentinelOps"
               className="h-14 w-14 object-contain"
             />

@@ -809,7 +809,7 @@ export default function SettingsPage() {
       <header className="shrink-0 h-13 border-b border-border header-gradient flex items-center px-4 gap-3">
         <div className="flex items-center gap-2">
           <img
-            src="https://miaoda-conversation-file.s3cdn.medo.dev/user-b8uq3eatai9u/app-bs8qtod6o9hd/20260527/SentinelOps logo Final.png"
+            src="/images/logo/sentinelops-logo.png"
             alt="SentinelOps"
             className="h-7 w-7 object-contain shrink-0"
           />
@@ -1871,7 +1871,7 @@ export default function SettingsPage() {
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground">Gemini 2.5 Flash</p>
                       <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
-                        Google Gemini via Medo gateway. Splunk provides evidence; Gemini provides reasoning.
+                        Google Gemini 2.5 Flash. Splunk provides evidence; Gemini provides reasoning.
                         Safe to claim at hackathon — clearly attributed.
                       </p>
                       {(config.reasoningProvider === 'gemini' || !config.reasoningProvider) && (

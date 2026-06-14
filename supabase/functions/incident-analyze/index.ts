@@ -10,7 +10,7 @@
 //   error-rest — REST configured but failed; no silent fallback to demo
 //
 // Reasoning:
-//   gemini (default)           — Gemini 2.5 Flash via Medo gateway
+//   gemini (default)           — Gemini 2.5 Flash (direct API)
 //   splunk-hosted-model        — user-supplied Splunk hosted model endpoint (OpenAI-compat)
 //
 // IMPORTANT: When live Splunk is configured and fails, the function returns an error event.

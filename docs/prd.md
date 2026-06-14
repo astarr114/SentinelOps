@@ -200,7 +200,7 @@ SentinelOps Application
 
 - User enters username and password to log in
 - User can register new account with username and password
-- Authentication uses Supabase Auth with @miaoda.com email simulation
+- Authentication uses Supabase Auth with @sentinelops.app email simulation
 - After successful login, user is redirected to Incident Dashboard
 
 **Integration**:

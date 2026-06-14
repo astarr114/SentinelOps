@@ -1,7 +1,3 @@
-# Welcome to Your Miaoda Project
-Miaoda Application Link URL
-    URL:https://medo.dev/projects/app-bs8qtod6o9hd
-
 # SentinelOps — Agentic AI Incident Commander for Splunk
 
 > **Splunk Agentic Ops Hackathon 2026 · Observability Track**
@@ -22,7 +18,7 @@ SentinelOps separates evidence gathering from AI reasoning into two **independen
 │  │   LAYER A — EVIDENCE      │  │  LAYER B — REASONING    │ │
 │  │                           │  │                         │ │
 │  │  Local Splunk Enterprise  │  │  Gemini 2.5 Flash       │ │
-│  │  ├─ REST API (:8089)      │  │  (via Medo gateway)     │ │
+│  │  ├─ REST API (:8089)      │  │  (direct API)           │ │
 │  │  └─ MCP Server 1.2        │  │          OR             │ │
 │  │     (/services/mcp)       │  │  Splunk Hosted Model    │ │
 │  │                           │  │  (Splunk Cloud Platform │ │
@@ -114,7 +110,7 @@ Configured in **Settings → Reasoning Provider (Section B)**:
 
 | Provider | Badge | Notes |
 |----------|-------|-------|
-| **Gemini 2.5 Flash** | `GEMINI` | Default. No credentials needed. Via platform gateway. |
+| **Gemini 2.5 Flash** | `GEMINI` | Default. No credentials needed. direct API. |
 | **Splunk Hosted Model** | `SPLUNK HOSTED MODEL` | Requires real Splunk Cloud Platform instance with AI enabled. Enter endpoint URL, token, and model name. Test inference before use. |
 
 > **Splunk Hosted Model requires Splunk Cloud Platform** — it is not available on local Splunk Enterprise. If you select this option without a valid Splunk Cloud AI endpoint, the app falls back to Gemini and clearly labels it as such.
@@ -296,7 +292,7 @@ Configure in Settings → Reasoning Provider. Supported:
 
 | Provider | Notes |
 |----------|-------|
-| **Gemini 2.5 Flash** | Default — via platform gateway, no key needed for demo |
+| **Gemini 2.5 Flash** | Default — direct API, no key needed for demo |
 | **OpenAI GPT-4o** | Paste your `sk-…` key |
 | **Anthropic Claude 3.5 Sonnet** | Paste your `sk-ant-…` key |
 | **Splunk Hosted Model** | Enter your OpenAI-compatible endpoint URL + token. Used for both streaming and non-streaming analysis. |
@@ -488,7 +484,7 @@ Browser (React 18 + Vite + Tailwind + shadcn/ui)
 | Database | Supabase PostgreSQL (RLS) |
 | Realtime | Supabase Realtime (`postgres_changes`) |
 | Auth | Supabase Auth (username + password) |
-| AI (default) | Gemini 2.5 Flash (platform gateway) |
+| AI (default) | Gemini 2.5 Flash (direct API) |
 | AI (optional) | OpenAI GPT-4o · Anthropic Claude 3.5 · Splunk Hosted Model |
 | MCP | Splunk MCP Server 1.2 (Streamable HTTP `/services/mcp`) |
 | Diff | `diff` npm package (word-level Myers algorithm) |
@@ -632,7 +628,7 @@ Three modes — no code changes required, configured entirely from Settings:
 
 Configure in Settings → AI Provider. Supported:
 
-- **Gemini 2.5 Flash** (default, via platform gateway — no key needed for demo)
+- **Gemini 2.5 Flash** (default, direct API — no key needed for demo)
 - **OpenAI GPT-4o** — paste your `sk-…` key
 - **Anthropic Claude 3.5 Sonnet** — paste your `sk-ant-…` key
 - **LLM Fallback Chain** — ordered list of providers tried on rate-limit or error
@@ -753,7 +749,7 @@ From the incident header **Export** dropdown (appears once an analysis exists):
 | Database | Supabase PostgreSQL (RLS) |
 | Realtime | Supabase Realtime (`postgres_changes`) |
 | Auth | Supabase Auth (username + password) |
-| AI | Gemini 2.5 Flash (platform gateway) |
+| AI | Gemini 2.5 Flash (direct API) |
 | MCP | Splunk MCP Server 1.2 (Streamable HTTP `/services/mcp`) |
 | Diff | `diff` npm package (word-level Myers algorithm) |
 | Charts | Recharts |
@@ -1003,7 +999,7 @@ Implements the Splunk MCP Server 1.2 capability pattern:
 | Backend | Supabase Edge Functions (Deno) |
 | Database | Supabase PostgreSQL |
 | Auth | Supabase Auth (username + password) |
-| AI Model | Gemini 2.5 Flash (via platform gateway) |
+| AI Model | Gemini 2.5 Flash (direct API) |
 | MCP Protocol | Splunk MCP Server 1.2 (Streamable HTTP, `/services/mcp`) |
 | Search | Bing Smart Search API |
 | OCR | OCR.space API |

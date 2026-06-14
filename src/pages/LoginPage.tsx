@@ -76,7 +76,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center">
             <img
-              src="https://miaoda-conversation-file.s3cdn.medo.dev/user-b8uq3eatai9u/app-bs8qtod6o9hd/20260527/SentinelOps logo Final.png"
+              src="/images/logo/sentinelops-logo.png"
               alt="SentinelOps Logo"
               className="h-24 w-24 object-contain"
             />
