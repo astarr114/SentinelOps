@@ -45,7 +45,7 @@ pnpm install
 pnpm dev
 ```
 
-**Demo login** — `admin` / `S3ntin3l$Ops#Admin2026!`  
+**Demo login** — `admin` / `12345678`  
 Or register a new account directly on the login page.
 
 > No Splunk instance required — Demo Mode ships with five pre-loaded incidents across checkout-service, payment-api, auth-service, inventory-service, and notification-service.
@@ -231,7 +231,7 @@ pnpm install
 pnpm dev
 ```
 
-**Demo login** — `admin` / `S3ntin3l$Ops#Admin2026!`  
+**Demo login** — `admin` / `12345678`  
 Or register a new account directly on the login page.
 
 > No Splunk instance required — Demo Mode ships with five pre-loaded incidents across checkout-service, payment-api, auth-service, inventory-service, and notification-service.
@@ -580,7 +580,7 @@ pnpm install
 pnpm dev
 ```
 
-**Demo login** — `admin` / `S3ntin3l$Ops#Admin2026!`  
+**Demo login** — `admin` / `12345678`  
 Or register a new account directly on the login page.
 
 > No Splunk instance required — Demo Mode ships with five pre-loaded incidents across checkout-service, payment-api, auth-service, inventory-service, and notification-service.

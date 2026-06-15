@@ -40,6 +40,18 @@ export interface McpSearchResult {
   endpoint: string;
   toolUsed: string;
   rowCount: number;
+  /** Splunk server-side WARN/ERROR messages (e.g. disk space, license) */
+  splunkMessages?: Array<{ type: string; text: string; help?: string }>;
+  /** True when Splunk returned isError or blocking server messages */
+  splunkServerError?: boolean;
+}
+
+export interface ParsedMcpPayload {
+  results: Array<Record<string, string>>;
+  rowCount: number;
+  splunkMessages: Array<{ type: string; text: string; help?: string }>;
+  splunkServerError: boolean;
+  splunkErrorText?: string;
 }
 
 export interface RestSearchOptions {
@@ -92,6 +104,139 @@ export function buildMcpHeaders(
     headers["ngrok-skip-browser-warning"] = "true";
   }
   return headers;
+}
+
+// ── MCP response parsing ──────────────────────────────────────────────────────
+
+/** Extract rows + Splunk server messages from any MCP tool payload shape. */
+export function parseMcpPayload(parsed: unknown, raw?: unknown): ParsedMcpPayload {
+  const splunkMessages: Array<{ type: string; text: string; help?: string }> = [];
+  let results: Array<Record<string, string>> = [];
+
+  const record = (parsed && typeof parsed === "object") ? parsed as Record<string, unknown> : null;
+
+  if (record) {
+    if (Array.isArray(record.messages)) {
+      for (const m of record.messages) {
+        if (m && typeof m === "object") {
+          const msg = m as { type?: string; text?: string; help?: string };
+          if (msg.text) splunkMessages.push({ type: msg.type ?? "INFO", text: msg.text, help: msg.help });
+        }
+      }
+    }
+
+    if (Array.isArray(record.results)) {
+      results = record.results as Array<Record<string, string>>;
+    } else if (Array.isArray(record.data)) {
+      results = record.data as Array<Record<string, string>>;
+    } else if (Array.isArray(record.rows)) {
+      results = record.rows as Array<Record<string, string>>;
+    } else if (Array.isArray(record.entries)) {
+      results = record.entries as Array<Record<string, string>>;
+    } else if (Array.isArray(parsed)) {
+      results = parsed as Array<Record<string, string>>;
+    }
+
+    const totalRows = record.total_rows ?? record.totalRows ?? record.count;
+    if (results.length === 0 && typeof totalRows === "number" && totalRows > 0) {
+      results = [{ _summary: String(totalRows) }];
+    }
+  } else if (Array.isArray(parsed)) {
+    results = parsed as Array<Record<string, string>>;
+  }
+
+  const blocking = splunkMessages.filter(m =>
+    /^(WARN|ERROR|FATAL)$/i.test(m.type) ||
+    /not executed|failed|error|denied|disk space|license|quota/i.test(m.text),
+  );
+  const rawIsError = Boolean(
+    (raw as { result?: { isError?: boolean } } | undefined)?.result?.isError,
+  );
+  const splunkServerError = rawIsError || blocking.length > 0;
+  const splunkErrorText = blocking.map(m => m.text).join(" | ") || undefined;
+
+  return {
+    results,
+    rowCount: results.length,
+    splunkMessages,
+    splunkServerError,
+    splunkErrorText,
+  };
+}
+
+/** Unwrap MCP JSON-RPC tool/call or tools/call response into parsed payload + raw RPC body. */
+export function unwrapMcpRpcResponse(data: unknown): { parsed: unknown; raw: unknown } {
+  const rpc = (data && typeof data === "object") ? data as Record<string, unknown> : {};
+  const content = (rpc.result as { content?: unknown } | undefined)?.content ?? rpc.content;
+  let parsed: unknown = data;
+
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (item && typeof item === "object") {
+        const block = item as { type?: string; text?: string };
+        if (block.type === "text" && typeof block.text === "string") {
+          try {
+            parsed = JSON.parse(block.text);
+          } catch {
+            parsed = { results: [{ _raw: block.text }] };
+          }
+          break;
+        }
+      }
+    }
+  } else if (Array.isArray((rpc.result as { results?: unknown } | undefined)?.results)) {
+    parsed = rpc.result;
+  }
+
+  return { parsed, raw: data };
+}
+
+// ── MCP JSON-RPC helpers ───────────────────────────────────────────────────────
+
+export async function callMcpRpc(
+  endpoint: string,
+  headers: Record<string, string>,
+  method: string,
+  params: unknown,
+  timeoutMs = 25_000,
+): Promise<unknown> {
+  const res = await fetch(endpoint, {
+    method:  "POST",
+    headers,
+    body:    JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    signal:  AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`MCP RPC ${method} failed HTTP ${res.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data = await res.json();
+  if (data?.error) {
+    throw new Error(data.error.message ?? JSON.stringify(data.error));
+  }
+  return data;
+}
+
+/** Invoke a named MCP tool and return parsed payload. */
+export async function runMcpToolCall(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  opts: McpSearchOptions,
+): Promise<{ parsed: ParsedMcpPayload; endpoint: string; toolUsed: string; raw: unknown }> {
+  const base     = normalizeMcpBase(opts.mcpUrl);
+  const endpoint = `${base}/services/mcp`;
+  const headers  = buildMcpHeaders(opts.mcpToken, opts.mcpAuthMethod, opts.mcpUsername, opts.mcpPassword, base);
+  const data     = await callMcpRpc(endpoint, headers, "tools/call", { name: toolName, arguments: toolArgs }, opts.timeoutMs);
+  const { parsed, raw } = unwrapMcpRpcResponse(data);
+  const payload  = parseMcpPayload(parsed, raw);
+
+  if (payload.splunkServerError && payload.splunkErrorText) {
+    throw new Error(`Splunk server: ${payload.splunkErrorText}`);
+  }
+
+  return { parsed: payload, endpoint, toolUsed: toolName, raw: data };
 }
 
 // ── MCP 1.2 search ────────────────────────────────────────────────────────────
@@ -178,33 +323,22 @@ export async function runMcpSearch(
       throw new Error(`MCP JSON-RPC error: ${errMsg}`);
     }
 
-    // Unwrap MCP result: { result: { content: [{ type: "text", text: "<json>" }] } }
-    const content = data?.result?.content ?? data?.content;
-    let results: Array<Record<string, string>> = [];
-    let raw: unknown = data;
+    const { parsed, raw } = unwrapMcpRpcResponse(data);
+    const payload = parseMcpPayload(parsed, raw);
 
-    if (Array.isArray(content)) {
-      for (const item of content) {
-        if (item?.type === "text" && typeof item?.text === "string") {
-          try {
-            const parsed = JSON.parse(item.text);
-            results = Array.isArray(parsed?.results) ? parsed.results
-              : Array.isArray(parsed) ? parsed
-              : [];
-            raw = parsed;
-          } catch {
-            results = [{ _raw: item.text }];
-          }
-          break;
-        }
-      }
-    } else if (Array.isArray(data?.result?.results)) {
-      results = data.result.results;
-    } else if (Array.isArray(data?.results)) {
-      results = data.results;
+    if (payload.splunkServerError && payload.splunkErrorText) {
+      throw new Error(`Splunk server: ${payload.splunkErrorText}`);
     }
 
-    return { results, raw, endpoint, toolUsed: tool.name, rowCount: results.length };
+    return {
+      results:           payload.results,
+      raw,
+      endpoint,
+      toolUsed:          tool.name,
+      rowCount:          payload.rowCount,
+      splunkMessages:    payload.splunkMessages,
+      splunkServerError: payload.splunkServerError,
+    };
   }
 
   throw new Error(

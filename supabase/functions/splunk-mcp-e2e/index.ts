@@ -1,38 +1,22 @@
 /**
  * splunk-mcp-e2e — End-to-end MCP connectivity test
  *
- * Runs 3 standard SPL queries + optional 4th user-defined query via MCP,
- * asserts each returns a non-empty result set (rowCount > 0), persists the
- * run record to Supabase, and returns the result including the DB row id.
+ * Phase 1 (connectivity): JSON-RPC tools/list + initialize — no Splunk search dispatch.
+ * Phase 2 (data):         SPL smoke test + metadata tool — requires Splunk search capacity.
  *
- * POST body:
- *   mcpUrl                    string  (required) — MCP server base URL
- *   mcpToken                  string  (optional) — bearer token
- *   mcpAuthMethod             "bearer" | "basic"
- *   mcpUsername               string  (optional)
- *   mcpPassword               string  (optional)
- *   skipNgrok                 boolean (optional)
- *   customQuery               string  (optional) — user-supplied SPL assertion
- *   customQueryName           string  (optional) — label for custom query
- *   splunkHostedModelEndpoint string  (optional)
- *   splunkHostedModelToken    string  (optional)
- *   userId                    string  (optional) — Supabase user id for persistence
- *
- * Response 200:
- *   {
- *     ok: boolean,
- *     assertions: Assertion[],
- *     durationMs: number,
- *     mcpUrl: string,
- *     passCount: number,
- *     totalCount: number,
- *     runId?: string,          // DB row id when userId provided
- *   }
+ * Overall ok = connectivity passes AND (data passes OR data blocked by Splunk server-side error).
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { runMcpSearch, type McpAuthMethod } from "../_shared/splunkClient.ts";
+import {
+  buildMcpHeaders,
+  callMcpRpc,
+  normalizeMcpBase,
+  runMcpSearch,
+  runMcpToolCall,
+  type McpAuthMethod,
+} from "../_shared/splunkClient.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
@@ -41,41 +25,18 @@ const CORS = {
 };
 
 interface Assertion {
-  name:       string;
-  spl:        string;
-  passed:     boolean;
-  rowCount:   number;
-  durationMs: number;
-  error?:     string;
-  toolUsed?:  string;
+  name:               string;
+  spl:                string;
+  passed:             boolean;
+  rowCount:           number;
+  durationMs:         number;
+  error?:             string;
+  toolUsed?:          string;
+  category:           "connectivity" | "data";
+  splunkServerError?: boolean;
 }
 
-// Three broad queries designed to return rows on ANY Splunk instance —
-// including a fresh Splunk Developer Edition with no user-ingested data.
-//
-// Key insight: Splunk's `index=*` wildcard searches only USER-CREATED indexes
-// and deliberately EXCLUDES internal indexes (_internal, _audit, etc.).
-// On a fresh / dev instance there may be zero user data, causing 0-row results.
-// By explicitly OR-ing in `index=_internal` (always populated on every Splunk)
-// we guarantee at least some rows are returned when the connection is live.
-const TEST_QUERIES: Array<{ name: string; spl: string }> = [
-  {
-    name: "Recent events (any index)",
-    // index=_internal is guaranteed present on every Splunk; index=* catches user indexes.
-    spl:  `(index=_internal OR index=*) earliest=-15m | head 5 | table _time index sourcetype`,
-  },
-  {
-    name: "Error-level events (last hour)",
-    // Removed restrictive field filters — just find any recent events regardless of level.
-    // _internal always has log_level=INFO/WARN/ERROR so this reliably returns rows.
-    spl:  `(index=_internal OR index=*) earliest=-1h | head 5 | table _time index sourcetype`,
-  },
-  {
-    name: "Host inventory",
-    // stats count by host across all indexes including _internal (always has a host field).
-    spl:  `(index=_internal OR index=*) earliest=-24h | stats count by host | sort -count | head 10`,
-  },
-];
+const SPL_SMOKE = "index=_internal earliest=-15m | head 5 | table _time index sourcetype";
 
 serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -113,46 +74,182 @@ serve(async (req: Request): Promise<Response> => {
 
   const wallStart   = Date.now();
   const assertions: Assertion[] = [];
+  const mcpOpts = { mcpUrl, mcpToken, mcpAuthMethod, mcpUsername, mcpPassword };
+  const base     = normalizeMcpBase(mcpUrl);
+  const endpoint = `${base}/services/mcp`;
+  const headers  = buildMcpHeaders(mcpToken, mcpAuthMethod, mcpUsername, mcpPassword, base);
 
-  // Build query list: 3 standard + optional custom query
-  const queryList = [...TEST_QUERIES];
-  if (customQuery) {
-    queryList.push({ name: customQueryName, spl: customQuery });
-  }
-
-  // ── SPL assertions via MCP ───────────────────────────────────────────────
-  for (const q of queryList) {
+  // ── Phase 1: MCP connectivity (JSON-RPC, no search dispatch) ───────────────
+  {
     const qStart = Date.now();
     try {
-      const result = await runMcpSearch(q.spl, {
-        mcpUrl,
-        mcpToken,
-        mcpAuthMethod,
-        mcpUsername,
-        mcpPassword,
+      const toolsJson = await callMcpRpc(endpoint, headers, "tools/list", {}) as {
+        result?: { tools?: unknown[] };
+      };
+      const toolCount = Array.isArray(toolsJson?.result?.tools) ? toolsJson.result!.tools!.length : 0;
+      assertions.push({
+        name:       "MCP tools/list",
+        spl:        `POST ${endpoint} → tools/list`,
+        passed:     toolCount > 0,
+        rowCount:   toolCount,
+        durationMs: Date.now() - qStart,
+        toolUsed:   "tools/list",
+        category:   "connectivity",
+        ...(toolCount === 0 ? { error: "MCP server returned zero tools" } : {}),
+      });
+    } catch (err) {
+      assertions.push({
+        name:       "MCP tools/list",
+        spl:        `POST ${endpoint} → tools/list`,
+        passed:     false,
+        rowCount:   0,
+        durationMs: Date.now() - qStart,
+        toolUsed:   "tools/list",
+        category:   "connectivity",
+        error:      err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  {
+    const qStart = Date.now();
+    try {
+      const initJson = await callMcpRpc(endpoint, headers, "initialize", {
+        protocolVersion: "2024-11-05",
+        capabilities:    {},
+        clientInfo:      { name: "SentinelOps", version: "1.0" },
+      }) as { result?: { serverInfo?: { name?: string; version?: string } } };
+      const info = initJson?.result?.serverInfo;
+      const label = info?.name
+        ? `${info.name}${info.version ? ` v${info.version}` : ""}`
+        : "handshake ok";
+      assertions.push({
+        name:       "MCP initialize handshake",
+        spl:        `POST ${endpoint} → initialize`,
+        passed:     true,
+        rowCount:   1,
+        durationMs: Date.now() - qStart,
+        toolUsed:   "initialize",
+        category:   "connectivity",
+        error:      undefined,
+        ...(label ? {} : {}),
+      });
+      // Store server label in spl field for UI visibility
+      assertions[assertions.length - 1].spl = label;
+    } catch (err) {
+      assertions.push({
+        name:       "MCP initialize handshake",
+        spl:        `POST ${endpoint} → initialize`,
+        passed:     false,
+        rowCount:   0,
+        durationMs: Date.now() - qStart,
+        toolUsed:   "initialize",
+        category:   "connectivity",
+        error:      err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // ── Phase 2: Data plane — SPL smoke + metadata tool ────────────────────────
+  {
+    const qStart = Date.now();
+    try {
+      const result = await runMcpSearch(SPL_SMOKE, {
+        ...mcpOpts,
+        earliestTime: "-15m",
+        latestTime:   "now",
+        maxResults:   5,
+        timeoutMs:    25_000,
+      });
+      assertions.push({
+        name:       "SPL smoke test (_internal events)",
+        spl:        SPL_SMOKE,
+        passed:     result.rowCount > 0,
+        rowCount:   result.rowCount,
+        durationMs: Date.now() - qStart,
+        toolUsed:   result.toolUsed,
+        category:   "data",
+        ...(result.rowCount === 0 ? { error: "Query returned 0 rows" } : {}),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const splunkServerError = msg.startsWith("Splunk server:");
+      assertions.push({
+        name:               "SPL smoke test (_internal events)",
+        spl:                SPL_SMOKE,
+        passed:             false,
+        rowCount:           0,
+        durationMs:         Date.now() - qStart,
+        toolUsed:           "splunk_run_query",
+        category:           "data",
+        splunkServerError,
+        error:              splunkServerError ? msg.replace(/^Splunk server:\s*/, "") : msg,
+      });
+    }
+  }
+
+  {
+    const qStart = Date.now();
+    try {
+      const { parsed, toolUsed } = await runMcpToolCall("splunk_get_info", {}, mcpOpts);
+      assertions.push({
+        name:       "Splunk server info (metadata)",
+        spl:        "tool: splunk_get_info",
+        passed:     parsed.rowCount > 0 || !parsed.splunkServerError,
+        rowCount:   Math.max(parsed.rowCount, 1),
+        durationMs: Date.now() - qStart,
+        toolUsed,
+        category:   "data",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const splunkServerError = msg.startsWith("Splunk server:");
+      assertions.push({
+        name:               "Splunk server info (metadata)",
+        spl:                "tool: splunk_get_info",
+        passed:             false,
+        rowCount:           0,
+        durationMs:         Date.now() - qStart,
+        toolUsed:           "splunk_get_info",
+        category:           "data",
+        splunkServerError,
+        error:              splunkServerError ? msg.replace(/^Splunk server:\s*/, "") : msg,
+      });
+    }
+  }
+
+  if (customQuery) {
+    const qStart = Date.now();
+    try {
+      const result = await runMcpSearch(customQuery, {
+        ...mcpOpts,
         earliestTime: "-24h",
         latestTime:   "now",
         maxResults:   10,
         timeoutMs:    25_000,
       });
-
       assertions.push({
-        name:       q.name,
-        spl:        q.spl,
+        name:       customQueryName,
+        spl:        customQuery,
         passed:     result.rowCount > 0,
         rowCount:   result.rowCount,
         durationMs: Date.now() - qStart,
         toolUsed:   result.toolUsed,
-        ...(result.rowCount === 0 ? { error: "Query returned 0 rows — index may be empty or SPL too restrictive" } : {}),
+        category:   "data",
+        ...(result.rowCount === 0 ? { error: "Query returned 0 rows" } : {}),
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const splunkServerError = msg.startsWith("Splunk server:");
       assertions.push({
-        name:       q.name,
-        spl:        q.spl,
-        passed:     false,
-        rowCount:   0,
-        durationMs: Date.now() - qStart,
-        error:      err instanceof Error ? err.message : String(err),
+        name:               customQueryName,
+        spl:                customQuery,
+        passed:             false,
+        rowCount:           0,
+        durationMs:         Date.now() - qStart,
+        category:           "data",
+        splunkServerError,
+        error:              splunkServerError ? msg.replace(/^Splunk server:\s*/, "") : msg,
       });
     }
   }
@@ -184,7 +281,8 @@ serve(async (req: Request): Promise<Response> => {
         rowCount:   reachable ? 1 : 0,
         durationMs: Date.now() - qStart,
         toolUsed:   "http-probe",
-        ...(!reachable ? { error: `HTTP ${res.status} — server returned 5xx, endpoint may be down` } : {}),
+        category:   "connectivity",
+        ...(!reachable ? { error: `HTTP ${res.status} — server returned 5xx` } : {}),
       });
     } catch (err) {
       assertions.push({
@@ -194,16 +292,30 @@ serve(async (req: Request): Promise<Response> => {
         rowCount:   0,
         durationMs: Date.now() - qStart,
         toolUsed:   "http-probe",
+        category:   "connectivity",
         error:      err instanceof Error ? err.message : "Network error — endpoint unreachable",
       });
     }
   }
 
   const durationMs = Date.now() - wallStart;
-  const allPassed  = assertions.every(a => a.passed);
   const passCount  = assertions.filter(a => a.passed).length;
 
-  // ── Persist run to Supabase (best-effort — never fail the response) ──────
+  const connectivity = assertions.filter(a => a.category === "connectivity");
+  const data         = assertions.filter(a => a.category === "data");
+  const connectivityOk = connectivity.length === 0 || connectivity.every(a => a.passed);
+  const dataOk         = data.length === 0 || data.every(a => a.passed);
+  const dataSplunkBlocked = data.length > 0 &&
+    data.every(a => !a.passed && a.splunkServerError);
+
+  // Pass when MCP path is healthy; Splunk-side resource errors (disk, license) are degraded not failed.
+  const ok = connectivityOk && (dataOk || dataSplunkBlocked);
+  const status: "healthy" | "degraded" | "failed" =
+    connectivityOk && dataOk ? "healthy"
+    : connectivityOk && dataSplunkBlocked ? "degraded"
+    : "failed";
+
+  // ── Persist run to Supabase (best-effort) ────────────────────────────────
   let runId: string | undefined;
   if (userId) {
     try {
@@ -218,7 +330,7 @@ serve(async (req: Request): Promise<Response> => {
           pass_count:  passCount,
           total_count: assertions.length,
           duration_ms: durationMs,
-          ok:          allPassed,
+          ok,
           assertions,
         })
         .select("id")
@@ -231,12 +343,15 @@ serve(async (req: Request): Promise<Response> => {
 
   return new Response(
     JSON.stringify({
-      ok:          allPassed,
+      ok,
+      status,
+      connectivityOk,
+      dataOk,
       assertions,
       durationMs,
-      mcpUrl,
+      mcpUrl:     base,
       passCount,
-      totalCount:  assertions.length,
+      totalCount: assertions.length,
       ...(runId ? { runId } : {}),
     }),
     { status: 200, headers: { ...CORS, "Content-Type": "application/json" } },

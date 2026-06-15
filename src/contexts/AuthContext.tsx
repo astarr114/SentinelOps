@@ -81,8 +81,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUpWithUsername = async (username: string, password: string) => {
     try {
       const email = `${username}@sentinelops.app`;
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { username } },
+      });
       if (error) throw error;
+      if (!data.session) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+      }
       return { error: null };
     } catch (error) {
       return { error: error as Error };

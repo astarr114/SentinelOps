@@ -147,9 +147,14 @@ interface E2eAssertion {
   durationMs: number;
   error?: string;
   toolUsed?: string;
+  category?: 'connectivity' | 'data';
+  splunkServerError?: boolean;
 }
 interface E2eTestResult {
   ok: boolean;
+  status?: 'healthy' | 'degraded' | 'failed';
+  connectivityOk?: boolean;
+  dataOk?: boolean;
   durationMs: number;
   passCount: number;
   totalCount: number;
@@ -1704,13 +1709,26 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     <div className={cn(
                       'flex items-center gap-2 rounded-md border px-3 py-1.5',
-                      e2eResult.ok ? 'border-emerald-600/40 bg-emerald-950/20' : 'border-red-600/40 bg-red-950/20',
+                      e2eResult.status === 'healthy' || (e2eResult.ok && !e2eResult.status)
+                        ? 'border-emerald-600/40 bg-emerald-950/20'
+                        : e2eResult.status === 'degraded'
+                          ? 'border-amber-600/40 bg-amber-950/20'
+                          : 'border-red-600/40 bg-red-950/20',
                     )}>
-                      {e2eResult.ok
-                        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                        : <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />}
-                      <span className={cn('text-xs font-semibold', e2eResult.ok ? 'text-emerald-300' : 'text-red-300')}>
-                        {e2eResult.passCount}/{e2eResult.totalCount} assertions passed
+                      {e2eResult.status === 'degraded'
+                        ? <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                        : e2eResult.ok
+                          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          : <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />}
+                      <span className={cn(
+                        'text-xs font-semibold',
+                        e2eResult.status === 'degraded'
+                          ? 'text-amber-300'
+                          : e2eResult.ok ? 'text-emerald-300' : 'text-red-300',
+                      )}>
+                        {e2eResult.status === 'degraded'
+                          ? `MCP connected — Splunk data plane degraded (${e2eResult.passCount}/${e2eResult.totalCount} passed)`
+                          : `${e2eResult.passCount}/${e2eResult.totalCount} assertions passed`}
                       </span>
                       <span className="text-[10px] text-muted-foreground font-mono ml-auto">{e2eResult.durationMs}ms total</span>
                       {e2eResult.runId && (
@@ -1752,7 +1770,9 @@ export default function SettingsPage() {
                               <td className="px-2 py-1.5 text-center whitespace-nowrap">
                                 {a.passed
                                   ? <span className="inline-flex items-center gap-1 text-emerald-400"><CheckCircle2 className="h-3 w-3" />Pass</span>
-                                  : <span className="inline-flex items-center gap-1 text-red-400"><XCircle className="h-3 w-3" />Fail</span>}
+                                  : a.splunkServerError
+                                    ? <span className="inline-flex items-center gap-1 text-amber-400"><AlertTriangle className="h-3 w-3" />Splunk</span>
+                                    : <span className="inline-flex items-center gap-1 text-red-400"><XCircle className="h-3 w-3" />Fail</span>}
                               </td>
                               <td className="px-2 py-1.5 text-right font-mono text-muted-foreground whitespace-nowrap">{a.rowCount}</td>
                               <td className="px-2 py-1.5 text-right font-mono text-muted-foreground whitespace-nowrap">{a.durationMs}ms</td>
