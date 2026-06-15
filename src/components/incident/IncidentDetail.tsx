@@ -45,14 +45,15 @@ function Section({ title, icon: Icon, children, defaultOpen = true }: {
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <button
-        className="w-full flex items-center justify-between px-4 py-3 bg-secondary/50 hover:bg-secondary transition-colors"
+        type="button"
+        className="print-section-header w-full flex items-center justify-between px-4 py-3 bg-secondary/50 hover:bg-secondary transition-colors"
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 text-primary shrink-0" />
           <span className="text-sm font-semibold text-foreground">{title}</span>
         </div>
-        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground no-print" /> : <ChevronDown className="h-4 w-4 text-muted-foreground no-print" />}
       </button>
       {open && <div className="p-4">{children}</div>}
     </div>
@@ -333,11 +334,14 @@ function exportMarkdown(incident: Incident, analysis: FullAnalysis) {
 
 function exportPdf(incident: Incident) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16);
-  // Set document title so browser uses it as the default PDF filename
   const prev = document.title;
   document.title = `incident_${incident.id}_analysis_${ts}`;
+  document.body.classList.add('printing');
+  window.addEventListener('afterprint', () => {
+    document.body.classList.remove('printing');
+    document.title = prev;
+  }, { once: true });
   window.print();
-  document.title = prev;
 }
 
 export function IncidentDetail({ incident, analysis, loading, streamingBrief = '', streamStep = 'idle', streamTokens = 0, streamCostUsd = '0.0000', streamStopReason = '', onAnalyze }: IncidentDetailProps) {
@@ -394,7 +398,7 @@ export function IncidentDetail({ incident, analysis, loading, streamingBrief = '
             </div>
             <h1 className="text-[15px] font-bold text-foreground text-balance leading-snug">{incident.title}</h1>
           </div>
-          <div className="shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
+          <div className="shrink-0 flex items-center gap-1.5 flex-wrap justify-end no-print">
             {analysis && <SaveAnalysisButton incident={incident} analysis={analysis} />}
             <PagerDutyButton incident={incident} />
 
@@ -503,7 +507,8 @@ export function IncidentDetail({ incident, analysis, loading, streamingBrief = '
 
         {/* ── Past Analyses Panel ─────────────────────────────────────────── */}
         {showPast && (
-          showDiff && compareIds.size === 2 ? (
+          <div className="no-print">
+          {showDiff && compareIds.size === 2 ? (
             /* ── Diff view ──────────────────────────────────────────────── */
             (() => {
               const [idA, idB] = [...compareIds];
@@ -642,7 +647,8 @@ export function IncidentDetail({ incident, analysis, loading, streamingBrief = '
                 </div>
               )}
             </div>
-          )
+          )}
+          </div>
         )}
 
         {!displayedAnalysis && !loading && (
@@ -754,7 +760,7 @@ export function IncidentDetail({ incident, analysis, loading, streamingBrief = '
 
         {/* Cache badge — shown when result came from DB cache */}
         {analysis?.fromCache && !loading && !selectedPastId && (
-          <div className="flex items-center justify-between rounded-lg border border-border/60 bg-secondary/20 px-3 py-2">
+          <div className="no-print flex items-center justify-between rounded-lg border border-border/60 bg-secondary/20 px-3 py-2">
             <span className="text-[11px] text-muted-foreground">
               ⚡ Loaded from cache — analysis ran previously
             </span>
@@ -769,7 +775,7 @@ export function IncidentDetail({ incident, analysis, loading, streamingBrief = '
 
         {/* Past-analysis view indicator */}
         {selectedPastId && !loading && (
-          <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <div className="no-print flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
             <span className="text-[11px] text-primary/80 flex items-center gap-1.5">
               <History className="h-3 w-3" />
               Viewing a past analysis
@@ -827,7 +833,8 @@ function AnalysisDisplay({ analysis, incidentId, incidentService }: {
         </div>
         {analysis.runtimeTrace && (
           <button
-            className="text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors underline underline-offset-2"
+            type="button"
+            className="no-print text-[10px] text-muted-foreground hover:text-foreground font-mono transition-colors underline underline-offset-2"
             onClick={() => downloadDiagnosticReport(analysis.runtimeTrace!, incidentId)}
             title="Download runtime diagnostic JSON"
           >
@@ -1072,8 +1079,10 @@ function AnalysisDisplay({ analysis, incidentId, incidentService }: {
         </Section>
       )}
 
-      {/* Runbook Panel (PagerDuty Response Plays) */}
-      <RunbookPanel service={analysis.metadata?.name ?? incidentService} incidentId={incidentId} />
+      {/* Runbook Panel (PagerDuty Response Plays) — interactive, omit from PDF */}
+      <div className="no-print">
+        <RunbookPanel service={analysis.metadata?.name ?? incidentService} incidentId={incidentId} />
+      </div>
 
       {/* Splunk Integration Info */}
       <div className="rounded-lg border border-border bg-secondary/10 p-3">

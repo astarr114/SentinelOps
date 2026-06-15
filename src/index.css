@@ -361,39 +361,122 @@
 
 /* ── Print / PDF styles ──────────────────────────────────────── */
 @media print {
+  /* Light-theme tokens so text-foreground / text-muted-foreground stay readable */
+  :root,
+  .dark,
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 15% 25%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 10% 35%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 20% 10%;
+    --border: 220 13% 82%;
+    --primary: 22 100% 42%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 20% 10%;
+  }
+
+  html,
   body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    background: white !important;
-    color: black !important;
+    background: #fff !important;
+    color: #111 !important;
   }
-  .no-print { display: none !important; }
-  header { display: none !important; }
-  /* Hide sidebar, nav, left panel — only show the incident detail */
+
+  /* Force readable text (dark theme leaves light text on white cards) */
+  .text-foreground,
+  .text-card-foreground,
+  .text-accent-foreground,
+  .text-secondary-foreground {
+    color: #111 !important;
+  }
+
+  .text-muted-foreground {
+    color: #444 !important;
+  }
+
+  .text-primary {
+    color: #c2410c !important;
+  }
+
+  .text-red-300, .text-red-400, .text-red-500 { color: #b91c1c !important; }
+  .text-orange-300, .text-orange-400 { color: #c2410c !important; }
+  .text-yellow-400, .text-yellow-600 { color: #a16207 !important; }
+  .text-green-400 { color: #15803d !important; }
+  .text-blue-400 { color: #1d4ed8 !important; }
+  .text-emerald-400 { color: #047857 !important; }
+  .text-purple-400 { color: #7e22ce !important; }
+  .text-amber-300, .text-amber-400 { color: #b45309 !important; }
+
+  /* Light card / panel backgrounds */
+  .bg-background,
+  .bg-card,
+  .bg-card\/50,
+  .bg-secondary\/10,
+  .bg-secondary\/20,
+  .bg-secondary\/30,
+  .bg-secondary\/40,
+  .bg-secondary\/50,
+  .bg-primary\/5 {
+    background-color: #f5f5f5 !important;
+  }
+
+  .border-amber-600\/40,
+  .bg-amber-950\/20 {
+    border-color: #d97706 !important;
+    background-color: #fffbeb !important;
+  }
+
+  .border-red-500\/30,
+  .bg-red-500\/10 {
+    border-color: #fca5a5 !important;
+    background-color: #fef2f2 !important;
+  }
+
+  /* Hide chrome — sidebars, nav, action buttons, chat panels */
+  header,
   aside,
   nav,
   [data-sidebar],
-  .no-print { display: none !important; }
-  /* Expand the analysis content to fill the page */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Expand incident detail to fill the page */
   .analytics-body,
   main {
-    padding: 0 !important;
+    padding: 0.5rem !important;
     overflow: visible !important;
     max-height: none !important;
     width: 100% !important;
   }
-  /* Make all overflow-hidden containers visible for print */
-  * {
+
+  /* Unclip scroll containers so all sections print */
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto {
     overflow: visible !important;
     max-height: none !important;
   }
-  /* Reset dark backgrounds to white for readability */
-  .bg-card, .bg-secondary\/20, .bg-secondary\/30, .bg-secondary\/40 {
-    background: #f9f9f9 !important;
+
+  /* Section cards: avoid awkward page breaks */
+  .print-section-header,
+  .rounded-lg.border {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
-  /* Keep colored severity / status badges readable */
-  [class*="text-red"], [class*="text-orange"], [class*="text-yellow"], [class*="text-green"] {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+
+  /* Section toggle headers stay visible; chevrons hidden via .no-print */
+  .print-section-header {
+    background: #eee !important;
+    border-bottom: 1px solid #ccc !important;
   }
 }

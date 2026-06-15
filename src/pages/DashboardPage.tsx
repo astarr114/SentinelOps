@@ -679,7 +679,7 @@ export default function DashboardPage() {
 
       {/* ── Judge-safe architecture status bar ───────────────────────────── */}
       {!isConfigLoading && (
-        <div className="shrink-0 border-b border-border/60 bg-secondary/20 px-4 py-1.5 flex items-center gap-3 flex-wrap">
+        <div className="no-print shrink-0 border-b border-border/60 bg-secondary/20 px-4 py-1.5 flex items-center gap-3 flex-wrap">
           {/* Live Splunk Evidence status */}
           <div className="flex items-center gap-1.5 text-[10px] font-mono">
             <Server className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -1205,7 +1205,7 @@ export default function DashboardPage() {
             <>
               {/* Live Splunk error banner — shown when MCP/REST fails, user must explicitly choose demo */}
               {liveError && !analyzing && (
-                <div className="shrink-0 border-b border-red-700/40 bg-red-950/20 px-4 py-3">
+                <div className="no-print shrink-0 border-b border-red-700/40 bg-red-950/20 px-4 py-3">
                   <div className="flex items-start gap-3">
                     <AlertTriangle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
@@ -1293,7 +1293,7 @@ export default function DashboardPage() {
               </div>
 
               {/* - Mobile stacked Tools/Follow-up panel (hidden md+) - */}
-              <div className="md:hidden flex flex-col shrink-0 border-t border-border bg-sidebar" style={{ height: '50vh' }}>
+              <div className="no-print md:hidden flex flex-col shrink-0 border-t border-border bg-sidebar" style={{ height: '50vh' }}>
                 {/* Tab bar */}
                 <div className="shrink-0 flex border-b border-border">
                   <button
@@ -1339,7 +1339,7 @@ export default function DashboardPage() {
 
         {/* Right Panel — Tools or Follow-up (md+ only) */}
         {selectedIncident && (
-          <aside className="hidden md:flex flex-col w-80 shrink-0 border-l border-border bg-sidebar overflow-hidden">
+          <aside className="no-print hidden md:flex flex-col w-80 shrink-0 border-l border-border bg-sidebar overflow-hidden">
             {/* Tab switcher */}
             <div className="shrink-0 flex gap-0.5 p-1.5 border-b border-border bg-sidebar-background/50">
               {([
