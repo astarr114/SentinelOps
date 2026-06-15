@@ -499,6 +499,49 @@ export default function SettingsPage() {
     }
   };
 
+  /** POST a sample Splunk alert payload — creates a real incident in the dashboard (E2E test). */
+  const handleSimulateSplunkAlert = async () => {
+    setWebhookTesting(true);
+    const secretParam = webhookSecret.trim();
+    const fnPath = secretParam
+      ? `splunk-alert-webhook?secret=${encodeURIComponent(secretParam)}`
+      : 'splunk-alert-webhook';
+    const sid = `sim_${Date.now().toString(36)}`;
+    try {
+      const { data, error } = await supabase.functions.invoke(fnPath, {
+        method: 'POST',
+        body: {
+          result: {
+            _time: new Date().toISOString(),
+            service: 'checkout-service',
+            severity: 'CRITICAL',
+            message: 'Simulated Splunk alert — error rate exceeded threshold (test from Settings)',
+            host: 'splunk-sim',
+          },
+          sid,
+          search_name: 'SentinelOps - Simulated high error rate',
+          results_link: config.splunkHost
+            ? `${config.splunkHost.replace(/\/$/, '')}/app/search`
+            : null,
+        },
+      });
+      if (error) {
+        const raw = await error?.context?.text?.().catch(() => null);
+        throw new Error(raw ?? error.message);
+      }
+      const incidentId = (data as { incident_id?: string })?.incident_id ?? `INC-SPLUNK-${sid.slice(0, 8).toUpperCase()}`;
+      toast.success('Simulated Splunk alert created incident', {
+        description: `${incidentId} — check the Command Center incident list.`,
+        duration: 8000,
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message.slice(0, 200) : 'Simulation failed';
+      toast.error('Could not create test incident', { description: detail });
+    } finally {
+      setWebhookTesting(false);
+    }
+  };
+
   // ── Severity rules state ──────────────────────────────────────────────────
   // Local draft — a copy of config.severityRules (or built-in defaults) so the
   // user can edit keywords without affecting live detection until they save.
@@ -1001,23 +1044,36 @@ export default function SettingsPage() {
                     <Webhook className="h-3.5 w-3.5 text-orange-400 shrink-0" />
                     <span className="text-xs font-semibold text-foreground">Splunk Webhook Integration</span>
                   </div>
-                  {/* Test button */}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={handleTestWebhook}
-                    disabled={webhookTesting}
-                    className="h-7 gap-1.5 text-xs shrink-0"
-                  >
-                    {webhookTesting
-                      ? <Loader2 className="h-3 w-3 animate-spin" />
-                      : webhookTestResult === 'ok'
-                        ? <CheckCircle2 className="h-3 w-3 icon-teal" />
-                        : webhookTestResult === 'fail'
-                          ? <XCircle className="h-3 w-3 text-red-400" />
-                          : <SendHorizontal className="h-3 w-3" />}
-                    {webhookTesting ? 'Testing…' : 'Send test ping'}
-                  </Button>
+                  {/* Test buttons */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleTestWebhook}
+                      disabled={webhookTesting}
+                      className="h-7 gap-1.5 text-xs"
+                    >
+                      {webhookTesting
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : webhookTestResult === 'ok'
+                          ? <CheckCircle2 className="h-3 w-3 icon-teal" />
+                          : webhookTestResult === 'fail'
+                            ? <XCircle className="h-3 w-3 text-red-400" />
+                            : <SendHorizontal className="h-3 w-3" />}
+                      {webhookTesting ? 'Testing…' : 'Test ping'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSimulateSplunkAlert}
+                      disabled={webhookTesting}
+                      className="h-7 gap-1.5 text-xs border-orange-600/40 text-orange-300 hover:bg-orange-900/20"
+                      title="POST a sample Splunk alert and create a real incident in the dashboard"
+                    >
+                      <Zap className="h-3 w-3" />
+                      Simulate alert
+                    </Button>
+                  </div>
                 </div>
 
                 {/* ── Secret input ── */}
@@ -1071,8 +1127,9 @@ export default function SettingsPage() {
                       ['2', 'Enter the same secret value in the "Webhook Secret" field above so the URL preview updates.'],
                       ['3', 'Copy the full Webhook URL above.'],
                       ['4', 'In Splunk: open a Saved Search → Edit → Alert actions → Add Actions → Webhook. Paste the URL.'],
-                      ['5', 'Ensure the Splunk search is enabled and has a schedule. The webhook fires each time the alert condition is met.'],
-                      ['6', 'Click "Send test ping" to verify connectivity. A green banner confirms the endpoint is reachable and the secret matches.'],
+                      ['5', 'Add a Webhook allow-list entry in Splunk (Settings → Server settings) for the base URL without ?secret=.'],
+                      ['6', 'Ensure the saved search is scheduled. Include eval fields in your SPL: severity, service, message (see docs/splunk-webhook.md).'],
+                      ['7', 'Click "Test ping" to verify connectivity, then "Simulate alert" to create a test incident in the dashboard.'],
                     ].map(([n, text]) => (
                       <li key={n} className="flex items-start gap-2">
                         <span className="shrink-0 w-4 h-4 rounded-full bg-primary/20 text-primary text-[9px] font-bold flex items-center justify-center mt-0.5">{n}</span>

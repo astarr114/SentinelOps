@@ -48,5 +48,9 @@ enable_confirmations = false
 enabled = true
 policy = "oneshot"
 
+# Splunk sends POST without a Supabase JWT — auth is via ?secret= in the URL.
+[functions.splunk-alert-webhook]
+verify_jwt = false
+
 [analytics]
 enabled = false

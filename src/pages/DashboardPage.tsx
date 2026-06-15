@@ -65,7 +65,10 @@ export default function DashboardPage() {
     resolved_at:  (r.resolved_at as string | null) ?? null,
     summary:      (r.summary as string) ?? '',
     time_window:  (r.time_window as string) ?? 'last_30m',
-    is_synthetic: true,
+    is_synthetic: Boolean(r.is_synthetic),
+    source:       (r.source as string | undefined) ?? undefined,
+    splunk_results_link: (r.splunk_results_link as string | null) ?? null,
+    tags:         Array.isArray(r.tags) ? (r.tags as string[]) : undefined,
   });
 
   useEffect(() => {
