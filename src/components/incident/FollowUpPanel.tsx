@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import type { AnalysisResult } from '@/types/types';
 import { MessageSquare, Send, Loader2, Zap, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { createParser } from 'eventsource-parser';
+import { readLlmSseStream, parseLlmErrorResponse } from '@/lib/llmStream';
 import { useLlm } from '@/contexts/LlmContext';
 
 const QUICK_PROMPTS = [
@@ -43,12 +43,10 @@ export function FollowUpPanel({ analysis }: FollowUpPanelProps) {
     if (!question.trim() || streaming) return;
 
     const userMsg: Message = { role: 'user', content: question };
-    setMessages(prev => [...prev, userMsg]);
+    const assistantMsg: Message = { role: 'assistant', content: '' };
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
     setInputText('');
     setStreaming(true);
-
-    const assistantMsg: Message = { role: 'assistant', content: '' };
-    setMessages(prev => [...prev, assistantMsg]);
 
     abortRef.current = new AbortController();
 
@@ -58,8 +56,8 @@ export function FollowUpPanel({ analysis }: FollowUpPanelProps) {
         service:       analysis.metadata?.name ?? 'unknown',
         severity:      'CRITICAL',
         summary:       analysis.summary,
-        topHypothesis: analysis.hypotheses[0]?.title ?? '',
-        blastServices: analysis.blastRadius.services,
+        topHypothesis: analysis.hypotheses?.[0]?.title ?? '',
+        blastServices: analysis.blastRadius?.services ?? [],
       } : {};
 
       const response = await fetch(
@@ -78,54 +76,45 @@ export function FollowUpPanel({ analysis }: FollowUpPanelProps) {
 
       if (!response.ok || !response.body) {
         const errText = await response.text();
-        throw new Error(errText || `HTTP ${response.status}`);
+        throw new Error(parseLlmErrorResponse(errText, response.status));
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-
-      const parser = createParser({
-        onEvent: (event) => {
-          if (!event.data || event.data === '[DONE]') return;
-          try {
-            const frame = JSON.parse(event.data);
-            const text = frame?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-              setMessages(prev => {
-                const updated = [...prev];
-                updated[updated.length - 1] = {
-                  ...updated[updated.length - 1],
-                  content: updated[updated.length - 1].content + text,
-                };
-                return updated;
-              });
-            }
-          } catch { /* skip */ }
-        },
+      const hasContent = await readLlmSseStream(response.body, (text) => {
+        setMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last?.role !== 'assistant') return prev;
+          updated[updated.length - 1] = { ...last, content: last.content + text };
+          return updated;
+        });
       });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.startsWith('data:')) {
-            parser.feed(line + '\n');
-          }
-        }
+      if (!hasContent) {
+        setMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last?.role !== 'assistant') return prev;
+          updated[updated.length - 1] = {
+            ...last,
+            content: 'No response received. Check your LLM API key in Settings → AI Model, then try again.',
+          };
+          return updated;
+        });
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      toast.error('Follow-up request failed');
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error('Follow-up request failed', { description: message.slice(0, 120) });
       console.error(err);
       setMessages(prev => {
         const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last?.role !== 'assistant') return prev;
         updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: 'Sorry, I encountered an error processing your request. Please try again.',
+          ...last,
+          content: message.includes('No LLM provider')
+            ? `${message} Add an API key in Settings → AI Model.`
+            : 'Sorry, I encountered an error processing your request. Please try again.',
         };
         return updated;
       });
