@@ -8,6 +8,7 @@ import { SplHighlight } from '@/components/incident/SplHighlight';
 import { toast } from 'sonner';
 import { useSplunk } from '@/contexts/SplunkContext';
 import { useLlm } from '@/contexts/LlmContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/db/supabase';
 import { validateSpl, type SplValidationError } from '@/lib/splValidator';
 import {
@@ -501,6 +502,7 @@ interface NlSplToolProps {
 function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, deepLinkQuery, deepLinkService }: NlSplToolProps) {
   const { isMcp, config } = useSplunk();
   const { activeLlm, buildFallbackChain } = useLlm();
+  const { user } = useAuth();
   // Pre-fill from deep-link ?nlq= param if provided
   const [question, setQuestion]       = useState(deepLinkQuery ?? '');
   const [loading, setLoading]         = useState(false);
@@ -514,6 +516,7 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
   const [execPath, setExecPath]       = useState<'mcp' | 'rest' | ''>('');
   const [mcpFallbackNote, setMcpFallbackNote] = useState('');
   const [resultView, setResultView]   = useState<'table' | 'chart'>('table');
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   // Query history state
   const [history, setHistory]               = useState<SplQueryHistoryItem[]>([]);
@@ -614,6 +617,28 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
   ];
   const chips = (suggestedQueries && suggestedQueries.length > 0) ? suggestedQueries : genericSuggestions;
 
+  const scrollToResults = () => {
+    requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
+  const persistHistoryEntry = async (query: string, generatedSpl: string) => {
+    if (!user?.id || !generatedSpl.trim()) return;
+    const { error: insertErr } = await supabase.from('spl_query_history').insert({
+      user_id:         user.id,
+      query_text:      query,
+      generated_spl:   generatedSpl,
+      service_context: incidentService || null,
+      incident_id:     incidentId || null,
+    });
+    if (insertErr) {
+      console.warn('History insert failed:', insertErr.message);
+      return;
+    }
+    await loadHistory();
+  };
+
   // Load history from DB
   const loadHistory = async () => {
     setHistoryLoading(true);
@@ -631,6 +656,12 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
       setHistoryLoading(false);
     }
   };
+
+  // Preload history count when NL→SPL tab opens
+  useEffect(() => {
+    if (user?.id) loadHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const handleToggleHistory = () => {
     const next = !showHistory;
@@ -726,6 +757,10 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
 
   // Bidirectional: pull recent search jobs from Splunk → upsert into local history
   const fetchSplunkHistory = async () => {
+    if (!user?.id) {
+      toast.error('Sign in required to import query history');
+      return;
+    }
     if (!config.splunkHost || !config.splunkToken) {
       toast.error('Splunk REST connection required', {
         description: 'Configure Splunk Host and Token in Settings to import history.',
@@ -752,6 +787,7 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
       for (const job of jobs) {
         if (!job.query?.trim()) continue;
         const { error: insertErr } = await supabase.from('spl_query_history').insert({
+          user_id:         user.id,
           query_text:      `[Imported] ${job.query.slice(0, 120)}`,
           generated_spl:   job.query,
           service_context: incidentService || null,
@@ -830,14 +866,7 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
 
       // Persist to history (generation only, no execution yet)
       if (generatedSpl) {
-        const { error: insertErr } = await supabase.from('spl_query_history').insert({
-          query_text:      query,
-          generated_spl:   generatedSpl,
-          service_context: incidentService || null,
-          incident_id:     incidentId || null,
-        });
-        if (insertErr) console.warn('History insert failed:', insertErr.message);
-        if (showHistory) loadHistory();
+        await persistHistoryEntry(query, generatedSpl);
       }
 
       return generatedSpl;
@@ -914,6 +943,17 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
       setMcpError(data.mcpError ?? '');
       setExecPath(data.execPath ?? '');
       setMcpFallbackNote(data.mcpFallbackNote ?? '');
+      scrollToResults();
+      const rowCount = Array.isArray(data.results) ? data.results.length : 0;
+      if (data.mcpMode === 'live') {
+        toast.success(`SPL executed${rowCount > 0 ? ` — ${rowCount} row${rowCount === 1 ? '' : 's'}` : ' — 0 rows'}`, {
+          description: 'Scroll to Execution Results below the SPL editor.',
+        });
+      } else if (data.mcpMode === 'demo') {
+        toast.info('Demo mode — sample explanation shown below', {
+          description: 'Configure MCP or Splunk REST in Settings for live results.',
+        });
+      }
     } catch (err) {
       const raw = err instanceof Error ? err.message : 'Failed to run SPL';
       const isFetchErr = raw.toLowerCase().includes('failed to fetch') || raw.toLowerCase().includes('networkerror');
@@ -922,6 +962,7 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
       });
       setMcpMode('error');
       setMcpError(raw.slice(0, 200));
+      scrollToResults();
     } finally {
       setRunning(false);
     }
@@ -1286,6 +1327,37 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
         </div>
       )}
 
+      {/* Execution results — shown after Run SPL (scroll target) */}
+      {(mcpMode !== 'idle' || explanation) && (
+        <div ref={resultsRef} className="space-y-2 rounded-lg border border-teal-700/40 bg-teal-950/15 p-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {mcpMode === 'error'
+              ? <XCircle className="h-4 w-4 text-red-400 shrink-0" />
+              : <CheckCircle2 className="h-4 w-4 text-teal-400 shrink-0" />}
+            <p className="text-[11px] font-semibold text-foreground">Execution Results</p>
+            <span className={cn(
+              'text-[10px] font-bold px-1.5 py-0.5 rounded ml-auto',
+              mcpMode === 'live'  ? 'bg-teal-600/30 text-teal-300'
+              : mcpMode === 'demo' ? 'bg-blue-600/30 text-blue-300'
+              : mcpMode === 'error' ? 'bg-red-600/30 text-red-300'
+              : 'bg-secondary text-muted-foreground'
+            )}>
+              {mcpMode === 'live'
+                ? execPath === 'rest' ? 'Live · Splunk REST'
+                  : execPath === 'mcp' ? 'Live · MCP'
+                  : 'Live'
+                : mcpMode === 'demo' ? 'Demo (no live Splunk)'
+                : mcpMode === 'error' ? 'Failed'
+                : 'Ready'}
+            </span>
+          </div>
+
+          {mcpMode === 'live' && results.length === 0 && !mcpError && (
+            <p className="text-[11px] text-muted-foreground">
+              Query ran successfully but returned <strong className="text-foreground">0 rows</strong>. Try widening the time range or adjusting the SPL.
+            </p>
+          )}
+
       {/* Results table + Chart toggle + Export */}
       {results.length > 0 && (
         <div className="space-y-1.5">
@@ -1415,13 +1487,16 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
         </div>
       )}
 
-      {/* Demo explanation */}
+      {/* Demo explanation (inside execution results panel) */}
       {explanation && !mcpError && (
         <div className="rounded-lg border border-blue-700/30 bg-blue-950/20 p-3">
+          <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-wide mb-1.5">Sample output (demo)</p>
           <pre className="text-[11px] text-blue-200 whitespace-pre-wrap break-words font-mono leading-relaxed">{explanation}</pre>
           <p className="text-[10px] text-muted-foreground mt-2">
-            Configure MCP Server in Settings to execute queries against live Splunk data.
+            Configure MCP Server or Splunk REST in Settings to execute against live Splunk data.
           </p>
+        </div>
+      )}
         </div>
       )}
 
@@ -1447,6 +1522,9 @@ function NlSplTool({ incidentId, incidentService, timeWindow, suggestedQueries, 
             )}
             {showHistory ? <ChevronUp className="h-3.5 w-3.5 ml-0.5" /> : <ChevronDown className="h-3.5 w-3.5 ml-0.5" />}
           </button>
+          {!showHistory && (
+            <span className="text-[10px] text-muted-foreground/70">Saved when you Generate SPL · click to expand</span>
+          )}
           <div className="flex items-center gap-2 ml-auto">
             {/* Saved queries toggle */}
             <button
