@@ -21,7 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { createParser } from 'eventsource-parser';
-import type { AnalysisResult, SplSavedQuery } from '@/types/types';
+import type { AnalysisResult, IncidentStatus, Severity } from '@/types/types';
 import { SavedQueriesPanel, SaveQueryDialog } from '@/components/incident/SavedQueriesPanel';
 import { SplunkAlertsPanel } from '@/components/incident/SplunkAlertsPanel';
 
@@ -1917,6 +1917,11 @@ interface ExportToolProps {
   analysis: AnalysisResult & { aiBrief?: Record<string, string> } | null;
   incidentId: string;
   incidentTitle: string;
+  incidentService?: string;
+  incidentSeverity?: Severity;
+  incidentStatus?: IncidentStatus;
+  openedAt?: string;
+  timeWindow?: string;
 }
 
 function buildMarkdown(analysis: NonNullable<ExportToolProps['analysis']>, title: string) {
@@ -1994,7 +1999,14 @@ function buildJira(analysis: NonNullable<ExportToolProps['analysis']>, title: st
   ].filter(Boolean).join('\n');
 }
 
-function ExportTool({ analysis, incidentId, incidentTitle }: ExportToolProps) {
+function ExportTool({
+  analysis, incidentId, incidentTitle,
+  incidentService = 'unknown-service',
+  incidentSeverity = 'HIGH',
+  incidentStatus = 'INVESTIGATING',
+  openedAt,
+  timeWindow = 'last_30m',
+}: ExportToolProps) {
   const [format, setFormat] = useState<'markdown' | 'slack' | 'jira'>('markdown');
   const [copied, setCopied] = useState(false);
   const [pptLoading, setPptLoading] = useState(false);
@@ -2027,36 +2039,16 @@ function ExportTool({ analysis, incidentId, incidentTitle }: ExportToolProps) {
   const downloadPpt = async () => {
     setPptLoading(true);
     try {
-      // Find the incident from analysis
-      const incident = {
+      const { generateIncidentBriefingPptx } = await import('@/lib/generateIncidentBriefingPptx');
+      const blob = await generateIncidentBriefingPptx(analysis, {
         id: incidentId,
         title: incidentTitle,
-        severity: (analysis as AnalysisResult & { aiBrief?: Record<string, string> }).blastRadius?.services?.length ? 'CRITICAL' : 'HIGH',
-        status: 'INVESTIGATING',
-        service: analysis.affectedServices?.[0] ?? analysis.metadata?.name ?? 'unknown',
-        opened_at: analysis.generatedAt,
-        time_window: 'last_30m',
-      };
-
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ppt-export`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ analysis, incident }),
-        }
-      );
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || `HTTP ${res.status}`);
-      }
-
-      const blob = await res.blob();
+        severity: incidentSeverity,
+        status: incidentStatus,
+        service: incidentService,
+        opened_at: openedAt ?? analysis.generatedAt,
+        time_window: timeWindow,
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -2069,6 +2061,7 @@ function ExportTool({ analysis, incidentId, incidentTitle }: ExportToolProps) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to generate PPT';
       toast.error('PPT generation failed', { description: msg.slice(0, 120) });
+      console.error('PPT export error:', err);
     } finally {
       setPptLoading(false);
     }
@@ -2132,6 +2125,9 @@ interface ToolsPanelProps {
   incidentId: string;
   incidentTitle: string;
   incidentService?: string;
+  incidentSeverity?: Severity;
+  incidentStatus?: IncidentStatus;
+  openedAt?: string;
   timeWindow?: string;
   suggestedQueries?: string[];
   deepLinkQuery?: string;
@@ -2149,7 +2145,15 @@ const TOOLS: { id: Tool; icon: React.ElementType; label: string }[] = [
   { id: 'export',         icon: Presentation, label: 'Export' },
 ];
 
-export function ToolsPanel({ analysis, incidentId, incidentTitle, incidentService = 'unknown-service', timeWindow = 'last_30m', suggestedQueries, deepLinkQuery, deepLinkService }: ToolsPanelProps) {
+export function ToolsPanel({
+  analysis, incidentId, incidentTitle,
+  incidentService = 'unknown-service',
+  incidentSeverity = 'HIGH',
+  incidentStatus = 'INVESTIGATING',
+  openedAt,
+  timeWindow = 'last_30m',
+  suggestedQueries, deepLinkQuery, deepLinkService,
+}: ToolsPanelProps) {
   const [activeTool, setActiveTool] = useState<Tool>('web-search');
 
   return (
@@ -2186,7 +2190,16 @@ export function ToolsPanel({ analysis, incidentId, incidentTitle, incidentServic
           />
         )}
         {activeTool === 'export' && (
-          <ExportTool analysis={analysis} incidentId={incidentId} incidentTitle={incidentTitle} />
+          <ExportTool
+            analysis={analysis}
+            incidentId={incidentId}
+            incidentTitle={incidentTitle}
+            incidentService={incidentService}
+            incidentSeverity={incidentSeverity}
+            incidentStatus={incidentStatus}
+            openedAt={openedAt}
+            timeWindow={timeWindow}
+          />
         )}
         {activeTool === 'splunk-alerts' && <SplunkAlertsPanel />}
       </div>

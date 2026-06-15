@@ -1328,6 +1328,9 @@ export default function DashboardPage() {
                         incidentId={selectedIncident.id}
                         incidentTitle={selectedIncident.title}
                         incidentService={selectedIncident.service}
+                        incidentSeverity={selectedIncident.severity}
+                        incidentStatus={selectedIncident.status}
+                        openedAt={selectedIncident.opened_at}
                         timeWindow={selectedIncident.time_window}
                         suggestedQueries={analysis?.suggestedQueries}
                         deepLinkQuery={deepLinkQuery}
@@ -1375,6 +1378,9 @@ export default function DashboardPage() {
                     incidentId={selectedIncident.id}
                     incidentTitle={selectedIncident.title}
                     incidentService={selectedIncident.service}
+                    incidentSeverity={selectedIncident.severity}
+                    incidentStatus={selectedIncident.status}
+                    openedAt={selectedIncident.opened_at}
                     timeWindow={selectedIncident.time_window}
                     suggestedQueries={analysis?.suggestedQueries}
                     deepLinkQuery={deepLinkQuery}
