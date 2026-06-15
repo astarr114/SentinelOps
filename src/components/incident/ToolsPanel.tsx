@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar, Cell } from 'recharts';
 import { createParser } from 'eventsource-parser';
 import type { AnalysisResult, IncidentStatus, Severity } from '@/types/types';
+import { generateIncidentBriefingPptx } from '@/lib/generateIncidentBriefingPptx';
 import { SavedQueriesPanel, SaveQueryDialog } from '@/components/incident/SavedQueriesPanel';
 import { SplunkAlertsPanel } from '@/components/incident/SplunkAlertsPanel';
 
@@ -2039,8 +2040,7 @@ function ExportTool({
   const downloadPpt = async () => {
     setPptLoading(true);
     try {
-      const { generateIncidentBriefingPptx } = await import('@/lib/generateIncidentBriefingPptx');
-      const blob = await generateIncidentBriefingPptx(analysis, {
+      await generateIncidentBriefingPptx(analysis, {
         id: incidentId,
         title: incidentTitle,
         severity: incidentSeverity,
@@ -2049,18 +2049,13 @@ function ExportTool({
         opened_at: openedAt ?? analysis.generatedAt,
         time_window: timeWindow,
       });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${incidentId}-briefing.pptx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
       toast.success('PowerPoint briefing downloaded');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to generate PPT';
-      toast.error('PPT generation failed', { description: msg.slice(0, 120) });
+      const hint = /failed to fetch/i.test(msg)
+        ? 'Try a hard refresh (Ctrl+Shift+R). If using a tunnel URL, reload the page after deploy.'
+        : msg.slice(0, 120);
+      toast.error('PPT generation failed', { description: hint });
       console.error('PPT export error:', err);
     } finally {
       setPptLoading(false);

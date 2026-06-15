@@ -65,7 +65,7 @@ type BriefingAnalysis = AnalysisResult & { aiBrief?: Record<string, string> };
 export async function generateIncidentBriefingPptx(
   analysis: BriefingAnalysis,
   incident: BriefingIncidentMeta,
-): Promise<Blob> {
+): Promise<void> {
   const pres = new PptxGenJS();
   pres.layout = 'LAYOUT_16x9';
   pres.title = `Incident Briefing ${incident.id}`;
@@ -78,7 +78,9 @@ export async function generateIncidentBriefingPptx(
   const genDate = formatTs(analysis.generatedAt ?? new Date().toISOString());
   const hypotheses = (analysis.hypotheses ?? []).slice(0, 3);
   const timeline = (analysis.timeline ?? []).slice(0, 7);
-  const actions = (analysis.recommendedActions ?? []).slice(0, 6);
+  const actions = (analysis.recommendedActions ?? [])
+    .map((a) => (typeof a === 'string' ? a : String(a)))
+    .slice(0, 6);
   const br = analysis.blastRadius ?? { services: [], endpoints: [] };
 
   // ── Slide 1: Cover ──────────────────────────────────────────────────────────
@@ -252,9 +254,5 @@ export async function generateIncidentBriefingPptx(
     s.addText('6 / 6', { x: 9.3, y: 5.1, w: 0.6, h: 0.3, fontSize: 9, color: P.gray2, fontFace: 'Arial', align: 'right' });
   }
 
-  const output = await pres.write({ outputType: 'blob' });
-  if (!(output instanceof Blob)) {
-    throw new Error('Unexpected PPTX output type');
-  }
-  return output;
+  await pres.writeFile({ fileName: `${incident.id}-briefing.pptx` });
 }

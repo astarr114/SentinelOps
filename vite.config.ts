@@ -20,4 +20,18 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: ["pptxgenjs", "jszip"],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/pptxgenjs") || id.includes("node_modules/jszip")) {
+            return "pptx-vendor";
+          }
+        },
+      },
+    },
+  },
 });
